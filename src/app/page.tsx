@@ -1,9 +1,13 @@
 import Link from 'next/link';
 import { AlertTriangle, MapPin, Bus, Train, ArrowRight } from 'lucide-react';
+import RouteSearch from './components/RouteSearch';
 
 export default function Home() {
   return (
     <div className="p-4 space-y-6">
+      {/* 経路検索 */}
+      <RouteSearch />
+
       {/* 次の出発 */}
       <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
         <h2 className="text-sm font-bold text-gray-500 mb-3">次の出発（予定）</h2>

@@ -9,7 +9,7 @@ export default function BottomNav() {
 
   const navItems = [
     { href: '/', label: 'ホーム', icon: Home },
-    { href: '/schedule', label: '時間割', icon: Calendar },
+    { href: '/schedule', label: 'コマ確認', icon: Calendar },
     { href: '/routes', label: 'ルート', icon: Map },
     { href: '/timetable', label: '時刻表', icon: Clock },
   ];
@@ -24,10 +24,10 @@ export default function BottomNav() {
             key={item.href}
             href={item.href}
             className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
-              isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-900'
+              isActive ? 'text-lime-600' : 'text-gray-400 hover:text-gray-900'
             }`}
           >
-            <Icon size={24} className={isActive ? 'fill-blue-50 stroke-blue-600' : ''} />
+            <Icon size={24} className={isActive ? 'fill-lime-50 stroke-lime-600' : ''} />
             <span className={`text-[10px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
           </Link>
         );

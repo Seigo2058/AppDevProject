@@ -26,10 +26,10 @@ export async function GET(request: Request) {
     if (startTime) {
       navitimeUrl.searchParams.append('start_time', startTime);
     } else {
-      // API requires start_time, goal_time, first_operation, or last_operation
-      // Default to current time in YYYY-MM-DDThh:mm:ss
+      // APIは start_time、goal_time、first_operation、または last_operation を必要とします
+      // デフォルトは YYYY-MM-DDThh:mm:ss 形式の現在時刻とします
       const now = new Date();
-      // Format to local time ISO string without milliseconds and Z
+      // ミリ秒とZを除いたローカル時間のISO文字列にフォーマットします
       const formattedTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
         .toISOString()
         .split('.')[0];

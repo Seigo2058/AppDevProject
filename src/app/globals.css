@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3f4f6; /* gray-100 */
-  --foreground: #111827; /* gray-900 */
+  --background: #f3f4f6; /* グレー100 */
+  --foreground: #111827; /* グレー900 */
 }
 
 body {
@@ -10,7 +10,7 @@ body {
   color: var(--foreground);
 }
 
-/* For iOS safe area */
+/* iOSのセーフエリア用 */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);

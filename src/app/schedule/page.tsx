@@ -13,7 +13,7 @@ import {
   CalendarCheck 
 } from "lucide-react";
 
-// Types matching CSV records
+// CSVのレコードに対応する型
 interface ClassPeriod {
   id: number;
   start: string;
@@ -22,7 +22,9 @@ interface ClassPeriod {
 
 interface OutboundBus {
   shinsapporo: string;
+  atsubetsuChuo: string;
   oasa: string;
+  wakaba: string;
   nopporo: string;
   johodai: string;
   edc: string;
@@ -33,7 +35,9 @@ interface InboundBus {
   edc: string;
   johodai: string;
   nopporo: string;
+  wakaba: string;
   oasa: string;
+  atsubetsuChuo: string;
   shinsapporo: string;
   isSchool: boolean;
 }
@@ -47,7 +51,7 @@ const dayFullNames: Record<string, string> = {
   "金": "金曜日"
 };
 
-// Robust CSV Line parser
+// 堅牢なCSV行パーサー
 function parseCSV(text: string): string[][] {
   try {
     if (!text) return [];
@@ -62,7 +66,7 @@ function parseCSV(text: string): string[][] {
   }
 }
 
-// Convert HH:MM time string to minutes past midnight
+// HH:MM形式の文字列を深夜0時からの分数に変換する
 function timeToMinutes(timeStr: string): number {
   if (!timeStr || timeStr === "-") return -1;
   try {
@@ -77,7 +81,7 @@ function timeToMinutes(timeStr: string): number {
   }
 }
 
-// Fetch helper with timeout
+// タイムアウト付きのフェッチヘルパー
 async function fetchWithTimeout(url: string, ms = 8000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), ms);
@@ -92,19 +96,19 @@ async function fetchWithTimeout(url: string, ms = 8000) {
 }
 
 export default function SchedulePage() {
-  // Load States
+  // 読み込み状態
   const [periods, setPeriods] = useState<ClassPeriod[]>([]);
   const [outboundBuses, setOutboundBuses] = useState<OutboundBus[]>([]);
   const [inboundBuses, setInboundBuses] = useState<InboundBus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // User Preferences
+  // ユーザー設定
   const [boardingStop, setBoardingStop] = useState<string>("新札幌駅");
   const [schedule, setSchedule] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(true);
 
-  // Load CSV data on mount
+  // マウント時にCSVデータを読み込む
   useEffect(() => {
     async function loadData() {
       try {
@@ -113,17 +117,17 @@ export default function SchedulePage() {
             if (!r.ok) throw new Error("timetable.csv の読み込みに失敗しました");
             return r.text();
           }),
-          fetchWithTimeout("/csv/timetable_jrbus_shinsapporoToJohodai.csv").then(r => {
+          fetchWithTimeout("/csv/timetable_jrbus_shin29_ShinsapporoToJohodai_weekdays.csv").then(r => {
             if (!r.ok) throw new Error("行き時刻表CSV の読み込みに失敗しました");
             return r.text();
           }),
-          fetchWithTimeout("/csv/timetable_jrbus_johodaiToShinsapporo.csv").then(r => {
+          fetchWithTimeout("/csv/timetable_jrbus_shin29_JohodaiToShinsapporo_weekdays.csv").then(r => {
             if (!r.ok) throw new Error("帰り時刻表CSV の読み込みに失敗しました");
             return r.text();
           }),
         ]);
 
-        // Parse school_timetable
+        // 時間割（school_timetable）の解析
         const rawPeriods = parseCSV(resPeriods);
         const parsedPeriods: ClassPeriod[] = [];
         for (let i = 1; i < rawPeriods.length; i++) {
@@ -141,37 +145,41 @@ export default function SchedulePage() {
         }
         setPeriods(parsedPeriods);
 
-        // Parse outbound
+        // 行き（outbound）の解析
         const rawOutbound = parseCSV(resOutbound);
         const parsedOutbound: OutboundBus[] = [];
         for (let i = 1; i < rawOutbound.length; i++) {
           const row = rawOutbound[i];
-          if (row && row.length >= 5) {
+          if (row && row.length >= 7) {
             parsedOutbound.push({
               shinsapporo: row[0] || "-",
-              oasa: row[1] || "-",
-              nopporo: row[2] || "-",
-              johodai: row[3] || "-",
-              edc: row[4] || "-",
-              isSchool: row[5] === "TRUE",
+              atsubetsuChuo: row[1] || "-",
+              oasa: row[2] || "-",
+              wakaba: row[3] || "-",
+              nopporo: row[4] || "-",
+              johodai: row[5] || "-",
+              edc: row[6] || "-",
+              isSchool: row[7] === "TRUE",
             });
           }
         }
         setOutboundBuses(parsedOutbound);
 
-        // Parse inbound
+        // 帰り（inbound）の解析
         const rawInbound = parseCSV(resInbound);
         const parsedInbound: InboundBus[] = [];
         for (let i = 1; i < rawInbound.length; i++) {
           const row = rawInbound[i];
-          if (row && row.length >= 5) {
+          if (row && row.length >= 7) {
             parsedInbound.push({
               edc: row[0] || "-",
               johodai: row[1] || "-",
               nopporo: row[2] || "-",
-              oasa: row[3] || "-",
-              shinsapporo: row[4] || "-",
-              isSchool: row[5] === "TRUE",
+              wakaba: row[3] || "-",
+              oasa: row[4] || "-",
+              atsubetsuChuo: row[5] || "-",
+              shinsapporo: row[6] || "-",
+              isSchool: row[7] === "TRUE",
             });
           }
         }
@@ -186,7 +194,7 @@ export default function SchedulePage() {
 
     loadData();
 
-    // Recover preferences from localStorage
+    // localStorageから設定を復元する
     if (typeof window !== "undefined") {
       try {
         const savedStop = localStorage.getItem("commute_boarding_stop");
@@ -204,6 +212,12 @@ export default function SchedulePage() {
             console.warn("Invalid schedule format in localStorage, ignoring.");
           }
         }
+        const savedIsEditing = localStorage.getItem("commute_is_editing");
+        if (savedIsEditing !== null) {
+          setIsEditing(savedIsEditing === "true");
+        } else if (savedSchedule && Array.isArray(JSON.parse(savedSchedule)) && JSON.parse(savedSchedule).length > 0) {
+          setIsEditing(false);
+        }
       } catch (e) {
         console.error("Failed to recover localStorage:", e);
       }
@@ -218,6 +232,13 @@ export default function SchedulePage() {
     }
   };
 
+  const handleSetIsEditing = (editing: boolean) => {
+    setIsEditing(editing);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("commute_is_editing", editing.toString());
+    }
+  };
+
   const toggleClass = (day: string, periodId: number) => {
     setSchedule(prev => {
       const key = `${day}-${periodId}`;
@@ -229,32 +250,36 @@ export default function SchedulePage() {
     });
   };
 
-  // Outbound boarding bus time helper
+  // 行きのバス乗車時刻ヘルパー
   const getOutboundDepartureTime = (bus: OutboundBus | null | undefined, stop: string): string => {
     if (!bus) return "-";
     if (stop === "新札幌駅") return bus.shinsapporo || "-";
+    if (stop === "厚別中央2条6丁目") return bus.atsubetsuChuo || "-";
     if (stop === "大麻駅南口") return bus.oasa || "-";
+    if (stop === "若葉1丁目") return bus.wakaba || "-";
     if (stop === "野幌駅南口") return bus.nopporo || "-";
     return "-";
   };
 
-  // Inbound arrival bus time helper
+  // 帰りのバス到着時刻ヘルパー
   const getInboundArrivalTime = (bus: InboundBus | null | undefined, stop: string): string => {
     if (!bus) return "-";
     if (stop === "新札幌駅") return bus.shinsapporo || "-";
+    if (stop === "厚別中央2条6丁目") return bus.atsubetsuChuo || "-";
     if (stop === "大麻駅南口") return bus.oasa || "-";
+    if (stop === "若葉1丁目") return bus.wakaba || "-";
     if (stop === "野幌駅南口") return bus.nopporo || "-";
     return "-";
   };
 
-  // Dynamically calculate commute schedules based on periods for a specific day
+  // 指定された曜日の授業時間に基づいて通学スケジュールを動的に計算する
   const getDaySchedule = (day: string) => {
     try {
       const scheduleArray = Array.isArray(schedule) ? schedule : [];
       const dayPeriods = periods.filter(p => p && p.id && scheduleArray.includes(`${day}-${p.id}`));
       if (dayPeriods.length === 0) return null;
 
-      // First and last period IDs
+      // 最初と最後の授業時間のID
       const periodIds = dayPeriods.map(p => p.id).filter(id => !isNaN(id));
       if (periodIds.length === 0) return null;
       
@@ -275,8 +300,8 @@ export default function SchedulePage() {
 
       if (startMins === -1 || endMins === -1) return null;
 
-      // OUTBOUND CALCULATION
-      // Find the latest bus that arrives at University before or exactly at classStart
+      // 行きの計算
+      // 授業開始時刻以前に大学に到着する最も遅いバスを見つける
       let optimalOutbound: OutboundBus | null = null;
       let latestArrivalMins = -1;
 
@@ -296,7 +321,7 @@ export default function SchedulePage() {
             latestArrivalMins = arrMins;
             optimalOutbound = bus;
           } else if (arrMins === latestArrivalMins) {
-            // Choose the one that has a later departure to minimize travel time
+            // 移動時間を最小限に抑えるため、出発時刻が遅い方を選択する
             if (optimalOutbound) {
               const currentOptimalDepTime = getOutboundDepartureTime(optimalOutbound, boardingStop);
               const currentOptimalDepMins = timeToMinutes(currentOptimalDepTime);
@@ -308,7 +333,7 @@ export default function SchedulePage() {
         }
       }
 
-      // Fallback: If no bus arrives before class, pick the earliest available bus
+      // フォールバック: 授業前に到着するバスがない場合、最も早いバスを選択する
       if (!optimalOutbound && outboundBuses.length > 0) {
         const validBuses = outboundBuses.filter(bus => 
           bus &&
@@ -320,8 +345,8 @@ export default function SchedulePage() {
         }
       }
 
-      // INBOUND CALCULATION
-      // Find the earliest bus that departs from University after or exactly at classEnd
+      // 帰りの計算
+      // 授業終了時刻以降に大学を出発する最も早いバスを見つける
       let optimalInbound: InboundBus | null = null;
       let earliestDepartureMins = 9999;
 
@@ -347,7 +372,7 @@ export default function SchedulePage() {
         }
       }
 
-      // Fallback: If no bus is scheduled after the class, pick the latest available bus
+      // フォールバック: 授業後に運行するバスがない場合、利用可能な最も遅いバスを選択する
       if (!optimalInbound && inboundBuses.length > 0) {
         const validBuses = inboundBuses.filter(bus => 
           bus &&
@@ -373,7 +398,7 @@ export default function SchedulePage() {
     }
   };
 
-  // Safe evaluation of daily schedules to catch any render-time crashes
+  // レンダリング時のクラッシュをキャッチするための毎日のスケジュールの安全な評価
   let computedSchedules: Record<string, any> = {};
   let renderingError: string | null = null;
 
@@ -388,7 +413,7 @@ export default function SchedulePage() {
     renderingError = e.message || "時刻データの処理中にエラーが発生しました。";
   }
 
-  // Quick loaders
+  // 簡易ローダー
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -398,7 +423,7 @@ export default function SchedulePage() {
     );
   }
 
-  // Primary fetch error or render calculation crash handler
+  // プライマリフェッチエラーまたはレンダリング計算クラッシュのハンドラー
   const activeError = error || renderingError;
   if (activeError) {
     return (
@@ -422,65 +447,56 @@ export default function SchedulePage() {
     <div className="p-4 space-y-6 pb-24 max-w-2xl mx-auto">
       
 
-      {/* Bus Stop Selector Area */}
-      <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-        <div className="flex items-center space-x-2 text-gray-800">
-          <Bus className="text-blue-600 h-5 w-5" />
-          <h3 className="text-sm font-bold text-gray-800">乗車バス停の登録</h3>
-        </div>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          出発する最寄りの停留所を選択してください。情報大学行きのバス運行状況と照らし合わせます。
-        </p>
-        
-        <div className="grid grid-cols-3 gap-2.5 pt-1">
-          {["新札幌駅", "大麻駅南口", "野幌駅南口"].map((stop) => {
-            const isSelected = boardingStop === stop;
-            return (
-              <button
-                key={stop}
-                onClick={() => handleSetBoardingStop(stop)}
-                className={`py-3 px-2 rounded-xl text-center text-xs font-bold transition-all flex flex-col items-center justify-center space-y-1.5 cursor-pointer border ${
-                  isSelected
-                    ? "bg-blue-50 text-blue-700 border-blue-200 shadow-sm font-black ring-2 ring-blue-500/20"
-                    : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100 hover:text-gray-800"
-                }`}
+      {/* 登録・編集エリア (isEditing === true の時のみ表示) */}
+      {isEditing && (
+        <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-6 animate-in fade-in duration-200">
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2 text-gray-800">
+              <Bus className="text-blue-600 h-5 w-5" />
+              <h3 className="text-sm font-bold text-gray-800">乗車バス停の登録</h3>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              出発する最寄りの停留所を選択してください。情報大学行きのバス運行状況と照らし合わせます。
+            </p>
+            
+            <div className="pt-1 relative">
+              <select
+                value={boardingStop}
+                onChange={(e) => handleSetBoardingStop(e.target.value)}
+                className="w-full py-3.5 pl-10 pr-10 rounded-xl text-sm font-bold bg-gray-50 border border-gray-200 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer appearance-none transition-all hover:bg-gray-100"
               >
-                <MapPin className={`h-4 w-4 ${isSelected ? "text-blue-600" : "text-gray-400"}`} />
-                <span>{stop}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Timetable Interactive Grid (Shown during Editing Mode) */}
-      <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Calendar className="text-blue-600 h-5 w-5" />
-            <h3 className="text-sm font-bold text-gray-800">授業時間割の登録</h3>
+                {["新札幌駅", "厚別中央2条6丁目", "大麻駅南口", "若葉1丁目", "野幌駅南口"].map((stop) => (
+                  <option key={stop} value={stop}>
+                    {stop}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <MapPin size={18} />
+              </div>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </div>
           </div>
-          {!isEditing && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer"
-            >
-              時間割を編集
-            </button>
-          )}
-        </div>
 
-        {isEditing ? (
-          <div className="space-y-4 animate-in fade-in duration-200">
+          <hr className="border-gray-100" />
+
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2 text-gray-800">
+              <Calendar className="text-blue-600 h-5 w-5" />
+              <h3 className="text-sm font-bold text-gray-800">授業時間割の登録</h3>
+            </div>
+            
             <p className="text-xs text-gray-500">
               授業がある「曜日 ✕ 時間目」のマスをタップして登録してください（再度タップすると解除）。
             </p>
             
-            <div className="overflow-x-auto pb-2">
-              <div className="min-w-[340px] space-y-1.5">
-                {/* Header Row */}
+            <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0">
+              <div className="w-full min-w-[260px] sm:min-w-[340px] space-y-1.5">
+                {/* ヘッダー行 */}
                 <div className="flex text-center">
-                  <div className="w-10"></div>
+                  <div className="w-8 sm:w-10 shrink-0"></div>
                   {days.map(day => (
                     <div key={day} className="flex-1 text-xs font-black text-gray-500 py-1">
                       {day}
@@ -488,17 +504,17 @@ export default function SchedulePage() {
                   ))}
                 </div>
                 
-                {/* Grid Body */}
+                {/* グリッド本体 */}
                 <div className="space-y-1">
                   {periods.map((period) => (
                     <div key={period.id} className="flex h-12 items-center">
-                      {/* Period Label with Times */}
-                      <div className="w-10 flex flex-col justify-center items-center text-center">
-                        <span className="text-[11px] font-black text-gray-800">{period.id}限</span>
-                        <span className="text-[8px] text-gray-400 font-bold leading-none">{period.start}</span>
+                      {/* 時間付きの授業ラベル */}
+                      <div className="w-8 sm:w-10 flex flex-col justify-center items-center text-center shrink-0">
+                        <span className="text-[10px] sm:text-[11px] font-black text-gray-800">{period.id}限</span>
+                        <span className="text-[7px] sm:text-[8px] text-gray-400 font-bold leading-none">{period.start}</span>
                       </div>
                       
-                      {/* Interactive Days */}
+                      {/* インタラクティブな曜日 */}
                       {days.map(day => {
                         const scheduleArray = Array.isArray(schedule) ? schedule : [];
                         const isSelected = scheduleArray.includes(`${day}-${period.id}`);
@@ -528,31 +544,31 @@ export default function SchedulePage() {
             </div>
 
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={() => handleSetIsEditing(false)}
               className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center hover:bg-blue-700 transition-colors active:scale-[0.99] cursor-pointer"
             >
               <Check size={18} className="mr-2" />
-              時間割を確定してスケジュールを更新
+              登録する
             </button>
           </div>
-        ) : (
-          <div className="bg-blue-50/50 rounded-xl p-4 flex items-start space-x-3 border border-blue-100">
-            <Info className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-blue-900">時間割の登録完了</p>
-              <p className="text-[11px] text-blue-700 leading-relaxed">
-                授業日程が保存されました。下の「1週間の移動スケジュール」にて、最適なバス乗車時刻を算出しています。時間割を変更したい場合は、右上の「時間割を編集」をタップしてください。
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      {/* Commute Schedule Section */}
+      {/* 通学スケジュールセクション */}
       <section className="space-y-4">
-        <h3 className="text-sm font-extrabold text-gray-600 uppercase tracking-wider">
-          1週間の最適な移動スケジュール
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-extrabold text-gray-600 uppercase tracking-wider">
+            1週間の最適な移動スケジュール
+          </h3>
+          {!isEditing && (
+            <button
+              onClick={() => handleSetIsEditing(true)}
+              className="flex items-center space-x-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer"
+            >
+              <span>編集する</span>
+            </button>
+          )}
+        </div>
         
         <div className="space-y-4">
           {days.map(day => {
@@ -560,7 +576,7 @@ export default function SchedulePage() {
             
             return (
               <div key={day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
-                {/* Card Title Bar */}
+                {/* カードタイトルバー */}
                 <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-100 flex justify-between items-center">
                   <span className="font-bold text-gray-800 text-sm">{dayFullNames[day]}</span>
                   {plan ? (
@@ -574,12 +590,12 @@ export default function SchedulePage() {
                   )}
                 </div>
                 
-                {/* Commute Plan Content */}
+                {/* 通学プランコンテンツ */}
                 <div className="p-5">
                   {plan ? (
                     <div className="space-y-5">
                       
-                      {/* Classes Info Block */}
+                      {/* 授業情報ブロック */}
                       <div className="flex items-center space-x-3 text-xs bg-gray-50 p-3 rounded-xl border border-gray-100">
                         <GraduationCap className="h-4.5 w-4.5 text-gray-500" />
                         <div>
@@ -590,7 +606,7 @@ export default function SchedulePage() {
                         </div>
                       </div>
 
-                      {/* OUTBOUND COMMUTE SECTION */}
+                      {/* 行きの通学セクション */}
                       <div className="space-y-2">
                         <div className="flex items-center space-x-1.5 text-xs font-extrabold text-blue-600">
                           <MapPin size={14} />
@@ -600,7 +616,7 @@ export default function SchedulePage() {
                         {plan.outbound ? (
                           <div className="bg-blue-50/30 border border-blue-100 rounded-xl p-4 space-y-3">
                             <div className="flex justify-between items-center">
-                              {/* Boarding Info */}
+                              {/* 乗車情報 */}
                               <div className="text-left space-y-1">
                                 <p className="text-xs text-gray-400 font-bold">乗車停留所</p>
                                 <p className="text-base font-black text-gray-900">
@@ -611,7 +627,7 @@ export default function SchedulePage() {
                                 </p>
                               </div>
 
-                              {/* Commute Arrow */}
+                              {/* 通学の矢印 */}
                               <div className="flex flex-col items-center px-4 flex-1">
                                 <div className="w-full flex items-center justify-center space-x-1 text-gray-400">
                                   <div className="h-[1px] bg-gray-200 flex-1"></div>
@@ -621,7 +637,7 @@ export default function SchedulePage() {
                                 <p className="text-[9px] font-bold text-gray-400 mt-1">バス運行</p>
                               </div>
 
-                              {/* Destination Info */}
+                              {/* 目的地情報 */}
                               <div className="text-right space-y-1">
                                 <p className="text-xs text-gray-400 font-bold">大学到着時刻</p>
                                 <p className="text-base font-black text-gray-900">
@@ -633,7 +649,7 @@ export default function SchedulePage() {
                               </div>
                             </div>
 
-                            {/* Extra badge if it is a school bus */}
+                            {/* スクールバスの場合の追加バッジ */}
                             {plan.outbound.isSchool && (
                               <div className="flex items-center space-x-1 bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
@@ -648,7 +664,7 @@ export default function SchedulePage() {
                         )}
                       </div>
 
-                      {/* INBOUND COMMUTE SECTION */}
+                      {/* 帰りの通学セクション */}
                       <div className="space-y-2">
                         <div className="flex items-center space-x-1.5 text-xs font-extrabold text-indigo-600">
                           <Clock size={14} />
@@ -658,7 +674,7 @@ export default function SchedulePage() {
                         {plan.inbound ? (
                           <div className="bg-indigo-50/20 border border-indigo-100 rounded-xl p-4 space-y-3">
                             <div className="flex justify-between items-center">
-                              {/* Boarding Stop */}
+                              {/* 乗車停留所 */}
                               <div className="text-left space-y-1">
                                 <p className="text-xs text-gray-400 font-bold">大学乗車時刻</p>
                                 <p className="text-base font-black text-gray-900">
@@ -669,7 +685,7 @@ export default function SchedulePage() {
                                 </p>
                               </div>
 
-                              {/* Commute Arrow */}
+                              {/* 通学の矢印 */}
                               <div className="flex flex-col items-center px-4 flex-1">
                                 <div className="w-full flex items-center justify-center space-x-1 text-gray-400">
                                   <div className="h-[1px] bg-gray-200 flex-1"></div>
@@ -679,7 +695,7 @@ export default function SchedulePage() {
                                 <p className="text-[9px] font-bold text-gray-400 mt-1">バス運行</p>
                               </div>
 
-                              {/* Destination Info */}
+                              {/* 目的地情報 */}
                               <div className="text-right space-y-1">
                                 <p className="text-xs text-gray-400 font-bold">最寄り到着時刻</p>
                                 <p className="text-base font-black text-gray-900">
@@ -691,7 +707,7 @@ export default function SchedulePage() {
                               </div>
                             </div>
 
-                            {/* Extra badge if it is a school bus */}
+                            {/* スクールバスの場合の追加バッジ */}
                             {plan.inbound.isSchool && (
                               <div className="flex items-center space-x-1 bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>

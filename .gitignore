@@ -1,6 +1,6 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# ファイルの無視に関する詳細は https://help.github.com/articles/ignoring-files/ を参照してください。
 
-# dependencies
+# 依存関係
 /node_modules
 /.pnp
 .pnp.*
@@ -10,27 +10,27 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
+# テスト
 /coverage
 
 # next.js
 /.next/
 /out/
 
-# production
+# 本番環境
 /build
 
-# misc
+# その他
 .DS_Store
 *.pem
 
-# debug
+# デバッグ
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# 環境変数ファイル（必要に応じてコミットに含めることができます）
 .env*
 
 # vercel

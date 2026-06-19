@@ -1,28 +1,17 @@
 import Link from 'next/link';
 import { AlertTriangle, MapPin, Bus, Train, ArrowRight } from 'lucide-react';
+import RouteSearch from './components/RouteSearch';
+import NextDeparture from './components/NextDeparture';
 
 export default function Home() {
   return (
     <div className="p-4 space-y-6">
+      {/* 経路検索 */}
+      <RouteSearch />
+
       {/* 次の出発 */}
-      <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <h2 className="text-sm font-bold text-gray-500 mb-3">次の出発（予定）</h2>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
-              <Bus size={24} />
-            </div>
-            <div>
-              <p className="text-2xl font-black text-gray-900">08:25</p>
-              <p className="text-xs text-gray-500">JRバス: ○○大学前 行き</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-500">あと</p>
-            <p className="text-xl font-bold text-blue-600">12分</p>
-          </div>
-        </div>
-      </section>
+      <NextDeparture />
+
 
       {/* 遅延情報 */}
       <section className="space-y-3">

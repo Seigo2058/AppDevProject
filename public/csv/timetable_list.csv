@@ -1,0 +1,15 @@
+route_id,交通機関種別,事業者名,路線名,方面,曜日,対応するcsv
+r_001,バス,JR北海道バス,江92[共栄線],江別駅前,平日,timetable_jrbus_e92_JohodaiToNopporo_weekdays.csv
+r_002,バス,JR北海道バス,江92[共栄線],江別駅前,土日・祝,timetable_jrbus_e92_JohodaiToNopporo_weekend.csv
+r_003,バス,JR北海道バス,江92[共栄線],北広島駅,平日,timetable_jrbus_e92_NopporoToJohodai_weekdays.csv
+r_004,バス,JR北海道バス,江92[共栄線],北広島駅,土日・祝,timetable_jrbus_e92_NopporoToJohodai_weekend.csv
+r_005,バス,JR北海道バス,新24[大麻団地線〔北翔大経由〕],新さっぽろ駅,平日,timetable_jrbus_shin24_OasaToShinsapporo_weekdays.csv
+r_006,バス,JR北海道バス,新24[大麻団地線〔北翔大経由〕],新さっぽろ駅,土日・祝,timetable_jrbus_shin24_OasaToShinsapporo_weekend.csv
+r_007,バス,JR北海道バス,新26[江別線・ゆめみ野線],新札幌駅,平日,timetable_jrbus_shin26_NopporoToShinsapporo_weekdays.csv
+r_008,バス,JR北海道バス,新26[江別線・ゆめみ野線],新札幌駅,土日・祝,timetable_jrbus_shin26_NopporoToShinsapporo_weekend.csv
+r_009,バス,JR北海道バス,新26[江別線・ゆめみ野線],野幌駅,平日,timetable_jrbus_shin26_ShinsapporoToNopporo_weekdays.csv
+r_010,バス,JR北海道バス,新26[江別線・ゆめみ野線],野幌駅,土日・祝,timetable_jrbus_shin26_ShinsapporoToNopporo_weekend.csv
+r_011,バス,JR北海道バス,新29[野幌運動公園線],新さっぽろ駅,平日,timetable_jrbus_shin29_JohodaiToShinsapporo_weekdays.csv
+r_012,バス,JR北海道バス,新29[野幌運動公園線],新さっぽろ駅,土日・祝,timetable_jrbus_shin29_JohodaiToShinsapporo_weekend.csv
+r_013,バス,JR北海道バス,新29[野幌運動公園線],野幌運動公園,平日,timetable_jrbus_shin29_ShinsapporoToJohodai_weekdays.csv
+r_014,バス,JR北海道バス,新29[野幌運動公園線],野幌運動公園,土日・祝,timetable_jrbus_shin29_ShinsapporoToJohodai_weekends.csv

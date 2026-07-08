@@ -4,29 +4,39 @@ import { useEffect, useState } from "react";
 import { Bus, GraduationCap } from "lucide-react";
 import {
   ClassPeriod,
-  OutboundBus,
-  InboundBus,
+  BoardingSelection,
+  DayPlan,
   days,
   dayFullNames,
   parseCSV,
   fetchWithTimeout,
   getDaySchedule,
-  getOutboundDepartureTime,
-  getInboundArrivalTime,
 } from "@/lib/schedule";
 import RouteLegCard from "./RouteLegCard";
+
+function loadBoardingSelection(): BoardingSelection | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem("commute_boarding_stop");
+  if (!raw) return { source: "csv", name: "新札幌駅" };
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && (parsed.source === "csv" || parsed.source === "transit")) {
+      return parsed;
+    }
+    throw new Error("invalid boarding format");
+  } catch {
+    // 旧バージョン（生文字列で保存）からの移行。当時はCSV経路しか存在しなかったため、
+    // 保存されていた文字列はそのままCSV乗り場名として扱う。
+    return { source: "csv", name: raw };
+  }
+}
 
 export default function TodayScheduleSection() {
   const [scheduleData, setScheduleData] = useState<{
     periods: ClassPeriod[];
-    outbound: OutboundBus[];
-    inbound: InboundBus[];
   } | null>(null);
 
-  const [boardingStop] = useState<string>(() => {
-    if (typeof window === "undefined") return "新札幌駅";
-    return localStorage.getItem("commute_boarding_stop") || "新札幌駅";
-  });
+  const [boarding] = useState<BoardingSelection | null>(loadBoardingSelection);
   const [schedule] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     const saved = localStorage.getItem("commute_schedule");
@@ -39,16 +49,14 @@ export default function TodayScheduleSection() {
     }
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
+  const [isComputing, setIsComputing] = useState(false);
   const [today] = useState(() => new Date());
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [resPeriods, resOutbound, resInbound] = await Promise.all([
-          fetchWithTimeout("/csv/school_timetable.csv").then((r) => r.text()),
-          fetchWithTimeout("/csv/timetable_jrbus_shin29_ShinsapporoToJohodai_weekdays.csv").then((r) => r.text()),
-          fetchWithTimeout("/csv/timetable_jrbus_shin29_JohodaiToShinsapporo_weekdays.csv").then((r) => r.text()),
-        ]);
+        const resPeriods = await fetchWithTimeout("/csv/school_timetable.csv").then((r) => r.text());
 
         const rawPeriods = parseCSV(resPeriods);
         const parsedPeriods: ClassPeriod[] = [];
@@ -62,43 +70,7 @@ export default function TodayScheduleSection() {
           }
         }
 
-        const rawOutbound = parseCSV(resOutbound);
-        const parsedOutbound: OutboundBus[] = [];
-        for (let i = 1; i < rawOutbound.length; i++) {
-          const row = rawOutbound[i];
-          if (row && row.length >= 7) {
-            parsedOutbound.push({
-              shinsapporo: row[0] || "-",
-              atsubetsuChuo: row[1] || "-",
-              oasa: row[2] || "-",
-              wakaba: row[3] || "-",
-              nopporo: row[4] || "-",
-              johodai: row[5] || "-",
-              edc: row[6] || "-",
-              isSchool: row[7] === "TRUE",
-            });
-          }
-        }
-
-        const rawInbound = parseCSV(resInbound);
-        const parsedInbound: InboundBus[] = [];
-        for (let i = 1; i < rawInbound.length; i++) {
-          const row = rawInbound[i];
-          if (row && row.length >= 7) {
-            parsedInbound.push({
-              edc: row[0] || "-",
-              johodai: row[1] || "-",
-              nopporo: row[2] || "-",
-              wakaba: row[3] || "-",
-              oasa: row[4] || "-",
-              atsubetsuChuo: row[5] || "-",
-              shinsapporo: row[6] || "-",
-              isSchool: row[7] === "TRUE",
-            });
-          }
-        }
-
-        setScheduleData({ periods: parsedPeriods, outbound: parsedOutbound, inbound: parsedInbound });
+        setScheduleData({ periods: parsedPeriods });
       } catch (err) {
         console.error("Failed to load CSV data in TodayScheduleSection:", err);
       } finally {
@@ -108,6 +80,31 @@ export default function TodayScheduleSection() {
 
     loadData();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function compute() {
+      if (isLoading || !scheduleData || !boarding) return;
+
+      const dayIndex = today.getDay();
+      if (dayIndex === 0 || dayIndex === 6) {
+        if (!cancelled) setDayPlan(null);
+        return;
+      }
+
+      setIsComputing(true);
+      const dayStr = days[dayIndex - 1];
+      const plan = await getDaySchedule(dayStr, schedule, scheduleData.periods, boarding);
+      if (!cancelled) {
+        setDayPlan(plan);
+        setIsComputing(false);
+      }
+    }
+    compute();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, scheduleData, boarding, schedule, today]);
 
   const card = renderCard();
 
@@ -119,7 +116,7 @@ export default function TodayScheduleSection() {
   );
 
   function renderCard() {
-    if (isLoading || !scheduleData) {
+    if (isLoading || !scheduleData || isComputing) {
       return (
         <div className="bg-[#fafafa] shadow-sm rounded-lg p-4 flex items-center justify-center min-h-[100px]">
           <div className="animate-spin rounded-full h-6 w-6 border-2 border-[#aecb72] border-t-transparent" />
@@ -136,8 +133,17 @@ export default function TodayScheduleSection() {
       );
     }
 
+    if (!boarding) {
+      return (
+        <div className="bg-[#fafafa] shadow-sm rounded-lg p-4">
+          <p className="text-sm font-bold text-gray-600">
+            「時間割」ページで乗車する駅・停留所を登録してください。
+          </p>
+        </div>
+      );
+    }
+
     const dayStr = days[dayIndex - 1];
-    const dayPlan = getDaySchedule(dayStr, schedule, scheduleData.periods, scheduleData.outbound, scheduleData.inbound, boardingStop);
 
     if (!dayPlan) {
       return (
@@ -148,12 +154,6 @@ export default function TodayScheduleSection() {
     }
 
     const periodBadge = dayPlan.minPeriod === dayPlan.maxPeriod ? `${dayPlan.minPeriod}限` : `${dayPlan.minPeriod}限〜${dayPlan.maxPeriod}限`;
-
-    const outboundArrivalStop = dayPlan.outbound?.edc !== "-" ? "eDCタワー前" : "情報大学前";
-    const outboundArrivalTime = dayPlan.outbound ? (dayPlan.outbound.edc !== "-" ? dayPlan.outbound.edc : dayPlan.outbound.johodai) : "-";
-
-    const inboundDepartureStop = dayPlan.inbound?.edc !== "-" ? "eDCタワー前(構内)" : "情報大学前(白樺通沿)";
-    const inboundDepartureTime = dayPlan.inbound ? (dayPlan.inbound.edc !== "-" ? dayPlan.inbound.edc : dayPlan.inbound.johodai) : "-";
 
     return (
       <div className="bg-[#fafafa] shadow-sm rounded-lg p-4 flex flex-col gap-4">
@@ -175,24 +175,24 @@ export default function TodayScheduleSection() {
           {dayPlan.outbound && (
             <RouteLegCard
               label="行き"
-              methodLabel="スクール便"
-              departureTime={getOutboundDepartureTime(dayPlan.outbound, boardingStop)}
-              departureStop={boardingStop}
+              methodLabel={dayPlan.outbound.isSchoolBus ? "スクール便" : dayPlan.outbound.routeName || "路線バス"}
+              departureTime={dayPlan.outbound.departureTime}
+              departureStop={boarding.name}
               departureIcon={Bus}
-              arrivalTime={outboundArrivalTime}
-              arrivalStop={outboundArrivalStop}
+              arrivalTime={dayPlan.outbound.arrivalTime}
+              arrivalStop={dayPlan.outbound.stopLabel}
               arrivalIcon={GraduationCap}
             />
           )}
           {dayPlan.inbound && (
             <RouteLegCard
               label="帰り"
-              methodLabel="スクール便"
-              departureTime={inboundDepartureTime}
-              departureStop={inboundDepartureStop}
+              methodLabel={dayPlan.inbound.isSchoolBus ? "スクール便" : dayPlan.inbound.routeName || "路線バス"}
+              departureTime={dayPlan.inbound.departureTime}
+              departureStop={dayPlan.inbound.stopLabel}
               departureIcon={GraduationCap}
-              arrivalTime={getInboundArrivalTime(dayPlan.inbound, boardingStop)}
-              arrivalStop={boardingStop}
+              arrivalTime={dayPlan.inbound.arrivalTime}
+              arrivalStop={boarding.name}
               arrivalIcon={Bus}
             />
           )}

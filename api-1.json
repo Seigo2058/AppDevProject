@@ -1,0 +1,3246 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Transit API",
+    "version": "1.0.0",
+    "description": "Public, read-only transit routing API for Japan.\n\nAll times are seconds from the service-date midnight in the result's timezone;\nvalues may exceed 86400 (after-midnight service) or be negative (yesterday's\nservice still running) — format for display client-side. Ids are feed-qualified\n(\"feedId:localId\"). Geographic endpoints accept \"geo:<lat>,<lon>\"."
+  },
+  "servers": [
+    {
+      "url": "https://api.transit.ls8h.com",
+      "description": "Public API (CORS-enabled, read-only)."
+    },
+    {
+      "url": "https://transit.ls8h.com",
+      "description": "First-party origin (same-origin via the web app)."
+    }
+  ],
+  "tags": [
+    {
+      "name": "planning",
+      "description": "Journey search and guide-UI route options."
+    },
+    {
+      "name": "search",
+      "description": "Station, place and reverse-geocoding autocomplete."
+    },
+    {
+      "name": "stations",
+      "description": "Station detail and departure boards."
+    },
+    {
+      "name": "catalog",
+      "description": "Ingested feeds and operator branding/license metadata."
+    },
+    {
+      "name": "map",
+      "description": "Map scene assets for guidance rendering."
+    },
+    {
+      "name": "system",
+      "description": "Operational probes."
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness probe",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeds": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "List ingested feeds with license attribution",
+        "operationId": "listFeeds",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/operators": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "List operator branding marks and logo/data licenses",
+        "operationId": "listOperators",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBrandingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/locations/suggest": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Station autocomplete (parent-station, multilingual prefix)",
+        "operationId": "suggestLocations",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/places/suggest": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Place autocomplete: stations, stops, facilities, addresses",
+        "operationId": "suggestPlaces",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceSuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/places/reverse": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Nearby places for a picked map point",
+        "operationId": "reversePlaces",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceReverseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stations/{id}": {
+      "get": {
+        "tags": [
+          "stations"
+        ],
+        "summary": "Station detail: platforms and serving routes",
+        "operationId": "getStation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Feed-qualified station id (feedId:stopId).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stations/{id}/departures": {
+      "get": {
+        "tags": [
+          "stations"
+        ],
+        "summary": "Departure board for a station",
+        "operationId": "getStationDepartures",
+        "description": "Lists upcoming departures for feeds whose terms allow this presentation. ODPT-published timetable data is used for journey planning, but the API does not expose ODPT's published station/train timetable information as a departure-board dataset.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Feed-qualified station id (feedId:stopId).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{8}$"
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,2}:\\d{2}(:\\d{2})?$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeparturesResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plan": {
+      "get": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "Journey search (出発 / 到着 / 始発 / 終電)",
+        "operationId": "planJourney",
+        "description": "Endpoints accept a station id (feedId:stopId) or geo:<lat>,<lon>. Times are seconds from the service-date midnight in the result timezone and may exceed 86400 or be negative.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Origin: a station id (feedId:stopId) or geo:<lat>,<lon>.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Origin: a station id (feedId:stopId) or geo:<lat>,<lon>."
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Destination: a station id (feedId:stopId) or geo:<lat>,<lon>.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Destination: a station id (feedId:stopId) or geo:<lat>,<lon>."
+            }
+          },
+          {
+            "name": "fromLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display name for the origin.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Optional display name for the origin."
+            }
+          },
+          {
+            "name": "toLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display name for the destination.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Optional display name for the destination."
+            }
+          },
+          {
+            "name": "viaLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Service date YYYYMMDD; defaults to today in the result timezone.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{8}$",
+              "description": "Service date YYYYMMDD; defaults to today in the result timezone."
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "description": "HH:MM or HH:MM:SS; defaults to the current time.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,2}:\\d{2}(:\\d{2})?$",
+              "description": "HH:MM or HH:MM:SS; defaults to the current time."
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "出発 / 到着 / 始発 / 終電.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "departure",
+                "arrival",
+                "first",
+                "last"
+              ],
+              "default": "departure",
+              "description": "出発 / 到着 / 始発 / 終電."
+            }
+          },
+          {
+            "name": "allowModes",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated transit modes to allow (pre-scan filter), e.g. rail,bus.",
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated transit modes to allow (pre-scan filter), e.g. rail,bus."
+            }
+          },
+          {
+            "name": "avoidModes",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated transit modes to avoid (pre-scan filter), e.g. bus,air,ferry.",
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated transit modes to avoid (pre-scan filter), e.g. bus,air,ferry."
+            }
+          },
+          {
+            "name": "avoidWalk",
+            "in": "query",
+            "required": false,
+            "description": "When true, exclude any itinerary containing a walking segment.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false",
+              "description": "When true, exclude any itinerary containing a walking segment."
+            }
+          },
+          {
+            "name": "maxTransfers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8,
+              "default": 3
+            }
+          },
+          {
+            "name": "numItineraries",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 3
+            }
+          },
+          {
+            "name": "via",
+            "in": "query",
+            "required": false,
+            "description": "Up to 3 経由 waypoints, repeated: a station id or geo:<lat>,<lon>. Departure/arrival searches only.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3
+            }
+          },
+          {
+            "name": "viaLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display label for each via, positionally matched to via[].",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable: endpoints identical, via unsupported, or search window too dense.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guidance/plan": {
+      "get": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "Guidance plan: ranked options, comparison basis, map geometry",
+        "operationId": "planGuidance",
+        "description": "A guide-UI contract over the planner: ranked options with metrics, cognitive load, decision factors, next action, coverage evidence and map geometry as first-class fields.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Origin: a station id (feedId:stopId) or geo:<lat>,<lon>.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Origin: a station id (feedId:stopId) or geo:<lat>,<lon>."
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Destination: a station id (feedId:stopId) or geo:<lat>,<lon>.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Destination: a station id (feedId:stopId) or geo:<lat>,<lon>."
+            }
+          },
+          {
+            "name": "fromLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display name for the origin.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Optional display name for the origin."
+            }
+          },
+          {
+            "name": "toLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display name for the destination.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Optional display name for the destination."
+            }
+          },
+          {
+            "name": "viaLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Service date YYYYMMDD; defaults to today in the result timezone.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{8}$",
+              "description": "Service date YYYYMMDD; defaults to today in the result timezone."
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "description": "HH:MM or HH:MM:SS; defaults to the current time.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,2}:\\d{2}(:\\d{2})?$",
+              "description": "HH:MM or HH:MM:SS; defaults to the current time."
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "出発 / 到着 / 始発 / 終電.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "departure",
+                "arrival",
+                "first",
+                "last"
+              ],
+              "default": "departure",
+              "description": "出発 / 到着 / 始発 / 終電."
+            }
+          },
+          {
+            "name": "allowModes",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated transit modes to allow (pre-scan filter), e.g. rail,bus.",
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated transit modes to allow (pre-scan filter), e.g. rail,bus."
+            }
+          },
+          {
+            "name": "avoidModes",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated transit modes to avoid (pre-scan filter), e.g. bus,air,ferry.",
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated transit modes to avoid (pre-scan filter), e.g. bus,air,ferry."
+            }
+          },
+          {
+            "name": "avoidWalk",
+            "in": "query",
+            "required": false,
+            "description": "When true, exclude any itinerary containing a walking segment.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false",
+              "description": "When true, exclude any itinerary containing a walking segment."
+            }
+          },
+          {
+            "name": "maxTransfers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8,
+              "default": 3
+            }
+          },
+          {
+            "name": "numItineraries",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 3
+            }
+          },
+          {
+            "name": "strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "balanced",
+                "fastest",
+                "fewestTransfers",
+                "lowestFare",
+                "shortestWalk"
+              ],
+              "default": "balanced"
+            }
+          },
+          {
+            "name": "live",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
+          },
+          {
+            "name": "tracking",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "origin",
+                "destination",
+                "both"
+              ],
+              "default": "none"
+            }
+          },
+          {
+            "name": "via",
+            "in": "query",
+            "required": false,
+            "description": "Up to 3 経由 waypoints, repeated: a station id or geo:<lat>,<lon>. Departure/arrival searches only.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3
+            }
+          },
+          {
+            "name": "viaLabel",
+            "in": "query",
+            "required": false,
+            "description": "Optional display label for each via, positionally matched to via[].",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidancePlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable: endpoints identical, via unsupported, or search window too dense.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/map/3d-scene": {
+      "get": {
+        "tags": [
+          "map"
+        ],
+        "summary": "Bounded 3D building scene layer URLs for a viewport",
+        "operationId": "getMap3dScene",
+        "parameters": [
+          {
+            "name": "minLat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "minLon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "maxLat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "maxLon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "maxLod",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2
+            }
+          },
+          {
+            "name": "textureMode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "notexture",
+                "texture"
+              ]
+            }
+          },
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "routeContext",
+                "viewport"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Map3dSceneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "detail": {}
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "FeedListResponse": {
+        "type": "object",
+        "properties": {
+          "feeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "feedId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "license": {
+                  "type": "string"
+                },
+                "attribution": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "fetchedAt": {
+                  "type": "string"
+                },
+                "bbox": {
+                  "type": "object",
+                  "properties": {
+                    "minLat": {
+                      "type": "number"
+                    },
+                    "minLon": {
+                      "type": "number"
+                    },
+                    "maxLat": {
+                      "type": "number"
+                    },
+                    "maxLon": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "minLat",
+                    "minLon",
+                    "maxLat",
+                    "maxLon"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Stop extent; used to pick feeds for geographic queries."
+                },
+                "serviceStart": {
+                  "type": "string",
+                  "description": "Earliest service date the feed's timetable describes (YYYYMMDD)."
+                },
+                "serviceEnd": {
+                  "type": "string",
+                  "description": "Latest service date the feed's timetable describes (YYYYMMDD); the data's 'as of' date."
+                },
+                "stale": {
+                  "type": "boolean",
+                  "description": "True when serviceEnd is before the request date: the timetable is a past snapshot kept usable via a forward roll."
+                }
+              },
+              "required": [
+                "feedId",
+                "name",
+                "license",
+                "country",
+                "version",
+                "fetchedAt"
+              ],
+              "additionalProperties": false,
+              "description": "One ingested feed, with its license attribution."
+            }
+          }
+        },
+        "required": [
+          "feeds"
+        ],
+        "additionalProperties": false
+      },
+      "SuggestResponse": {
+        "type": "object",
+        "properties": {
+          "stations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameKana": {
+                  "type": "string"
+                },
+                "feedId": {
+                  "type": "string"
+                },
+                "feedName": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "weight": {
+                  "type": "number"
+                },
+                "lat": {
+                  "type": "number",
+                  "description": "Station coordinates, carried so map/guidance callers skip feed loads."
+                },
+                "lon": {
+                  "type": "number"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "station",
+                    "stop"
+                  ],
+                  "description": "Rail-like station vs roadside stop, by serving mode."
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "feedId",
+                "feedName",
+                "score",
+                "weight"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "stations"
+        ],
+        "additionalProperties": false
+      },
+      "PlaceSuggestResponse": {
+        "type": "object",
+        "properties": {
+          "places": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "endpoint": {
+                  "type": "string",
+                  "description": "Endpoint accepted by the route planner: feed-qualified station id or geo:lat,lon."
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "station",
+                    "stop",
+                    "place",
+                    "address"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "transit",
+                    "osm",
+                    "geocoder"
+                  ]
+                },
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "weight": {
+                  "type": "number"
+                },
+                "nameKana": {
+                  "type": "string"
+                },
+                "nameEn": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "feedId": {
+                  "type": "string"
+                },
+                "feedName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "endpoint",
+                "name",
+                "kind",
+                "source",
+                "lat",
+                "lon",
+                "score",
+                "weight"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "transit",
+                    "osm",
+                    "geocoder"
+                  ]
+                }
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "station",
+                    "stop",
+                    "place",
+                    "address"
+                  ]
+                }
+              },
+              "notices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "info",
+                        "warning"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "severity",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "sources",
+              "kinds",
+              "notices"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "places",
+          "coverage"
+        ],
+        "additionalProperties": false
+      },
+      "PlaceReverseResponse": {
+        "type": "object",
+        "properties": {
+          "places": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "endpoint": {
+                  "type": "string",
+                  "description": "Endpoint accepted by the route planner: feed-qualified station id or geo:lat,lon."
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "station",
+                    "stop",
+                    "place",
+                    "address"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "transit",
+                    "osm",
+                    "geocoder"
+                  ]
+                },
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "weight": {
+                  "type": "number"
+                },
+                "nameKana": {
+                  "type": "string"
+                },
+                "nameEn": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "feedId": {
+                  "type": "string"
+                },
+                "feedName": {
+                  "type": "string"
+                },
+                "distanceMeters": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "endpoint",
+                "name",
+                "kind",
+                "source",
+                "lat",
+                "lon",
+                "score",
+                "weight",
+                "distanceMeters"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "transit",
+                    "osm",
+                    "geocoder"
+                  ]
+                }
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "station",
+                    "stop",
+                    "place",
+                    "address"
+                  ]
+                }
+              },
+              "notices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "info",
+                        "warning"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "severity",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "sources",
+              "kinds",
+              "notices"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "places",
+          "coverage"
+        ],
+        "additionalProperties": false
+      },
+      "StationDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameKana": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "platformCode": {
+                  "type": "string"
+                },
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "lat",
+                "lon"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string"
+                },
+                "color": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "mode"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "lat",
+          "lon",
+          "feedId",
+          "platforms",
+          "routes"
+        ],
+        "additionalProperties": false
+      },
+      "DeparturesResponse": {
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "departures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "routeName": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string"
+                },
+                "color": {
+                  "type": "string"
+                },
+                "headsign": {
+                  "type": "string"
+                },
+                "tripId": {
+                  "type": "string"
+                },
+                "stopId": {
+                  "type": "string"
+                },
+                "departureSecs": {
+                  "type": "number"
+                },
+                "headwayBased": {
+                  "type": "boolean"
+                },
+                "headwaySecs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "routeName",
+                "mode",
+                "tripId",
+                "stopId",
+                "departureSecs",
+                "headwayBased"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "stationId",
+          "date",
+          "timezone",
+          "departures"
+        ],
+        "additionalProperties": false
+      },
+      "PlanResponse": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "departure",
+              "arrival",
+              "first",
+              "last"
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "from": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "journeys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "departureSecs": {
+                  "type": "number"
+                },
+                "arrivalSecs": {
+                  "type": "number"
+                },
+                "durationSecs": {
+                  "type": "number"
+                },
+                "transferCount": {
+                  "type": "number"
+                },
+                "fare": {
+                  "type": "object",
+                  "properties": {
+                    "currency": {
+                      "type": "string"
+                    },
+                    "ticket": {
+                      "type": "number",
+                      "description": "きっぷ運賃."
+                    },
+                    "ic": {
+                      "type": "number",
+                      "description": "ICカード運賃, when the source distinguishes it."
+                    }
+                  },
+                  "required": [
+                    "currency",
+                    "ticket"
+                  ],
+                  "additionalProperties": false
+                },
+                "accessWalkSecs": {
+                  "type": "number",
+                  "description": "Walk from the geographic origin to the first stop (geo queries only)."
+                },
+                "egressWalkSecs": {
+                  "type": "number",
+                  "description": "Walk from the last stop to the geographic destination (geo queries only)."
+                },
+                "legs": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "transit"
+                            ]
+                          },
+                          "routeName": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string"
+                          },
+                          "color": {
+                            "type": "string"
+                          },
+                          "headsign": {
+                            "type": "string"
+                          },
+                          "tripId": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "platformCode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "to": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "platformCode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "departureSecs": {
+                            "type": "number"
+                          },
+                          "arrivalSecs": {
+                            "type": "number"
+                          },
+                          "headwayBased": {
+                            "type": "boolean",
+                            "description": "True when times are worst-case bounds from headway operation."
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "routeName",
+                          "mode",
+                          "tripId",
+                          "from",
+                          "to",
+                          "departureSecs",
+                          "arrivalSecs",
+                          "headwayBased"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "walk"
+                            ]
+                          },
+                          "from": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "platformCode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "to": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "platformCode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "departureSecs": {
+                            "type": "number"
+                          },
+                          "arrivalSecs": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "from",
+                          "to",
+                          "departureSecs",
+                          "arrivalSecs"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "departureSecs",
+                "arrivalSecs",
+                "durationSecs",
+                "transferCount",
+                "legs"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "date",
+          "type",
+          "timezone",
+          "from",
+          "to",
+          "journeys"
+        ],
+        "additionalProperties": false
+      },
+      "GuidancePlanResponse": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "departure",
+              "arrival",
+              "first",
+              "last"
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "from": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "live": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "liveQuery"
+                ]
+              },
+              "tracking": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "origin",
+                  "destination",
+                  "both"
+                ]
+              },
+              "refreshAfterSecs": {
+                "type": "number"
+              },
+              "anchorSecs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "mode",
+              "tracking",
+              "refreshAfterSecs",
+              "anchorSecs"
+            ],
+            "additionalProperties": false
+          },
+          "osm": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "notApplicable",
+                  "network",
+                  "estimated"
+                ]
+              },
+              "regionId": {
+                "type": "string"
+              },
+              "attribution": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "feeds": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "feedId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "transitModes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "tram",
+                          "subway",
+                          "rail",
+                          "bus",
+                          "ferry",
+                          "cableTram",
+                          "aerialLift",
+                          "funicular",
+                          "trolleybus",
+                          "monorail",
+                          "air"
+                        ]
+                      },
+                      "description": "Transit modes actually used from this feed in returned options, when known."
+                    },
+                    "serviceEnd": {
+                      "type": "string",
+                      "description": "Latest service date this feed's timetable describes (YYYYMMDD); present when known."
+                    },
+                    "stale": {
+                      "type": "boolean",
+                      "description": "True when this feed's data ended before the query date and was rolled forward to stay usable."
+                    }
+                  },
+                  "required": [
+                    "feedId",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "transitModes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "tram",
+                    "subway",
+                    "rail",
+                    "bus",
+                    "ferry",
+                    "cableTram",
+                    "aerialLift",
+                    "funicular",
+                    "trolleybus",
+                    "monorail",
+                    "air"
+                  ]
+                }
+              },
+              "notices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "info",
+                        "warning"
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "loadedDataScope",
+                        "stationRailCandidateMissing",
+                        "noRouteInLoadedData",
+                        "constraintsApplied",
+                        "constraintsNoRoute",
+                        "staleFeedData"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "modes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "tram",
+                          "subway",
+                          "rail",
+                          "bus",
+                          "ferry",
+                          "cableTram",
+                          "aerialLift",
+                          "funicular",
+                          "trolleybus",
+                          "monorail",
+                          "air"
+                        ]
+                      }
+                    },
+                    "walk": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "severity",
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "feeds",
+              "transitModes",
+              "notices"
+            ],
+            "additionalProperties": false
+          },
+          "decision": {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "balanced",
+                  "fastest",
+                  "fewestTransfers",
+                  "lowestFare",
+                  "shortestWalk"
+                ]
+              },
+              "recommendedOptionId": {
+                "type": "string"
+              },
+              "primaryFactors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "arrivalTime",
+                        "duration",
+                        "transferBurden",
+                        "fare",
+                        "walkingBurden",
+                        "waitingBurden",
+                        "reliability",
+                        "directness"
+                      ]
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "advantage",
+                        "tradeoff",
+                        "risk"
+                      ]
+                    },
+                    "magnitude": {
+                      "type": "string",
+                      "enum": [
+                        "small",
+                        "medium",
+                        "large"
+                      ]
+                    },
+                    "deltaSecs": {
+                      "type": "number"
+                    },
+                    "deltaCount": {
+                      "type": "number"
+                    },
+                    "deltaAmount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "effect",
+                    "magnitude"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "tradeoffs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "arrivalTime",
+                        "duration",
+                        "transferBurden",
+                        "fare",
+                        "walkingBurden",
+                        "waitingBurden",
+                        "reliability",
+                        "directness"
+                      ]
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "advantage",
+                        "tradeoff",
+                        "risk"
+                      ]
+                    },
+                    "magnitude": {
+                      "type": "string",
+                      "enum": [
+                        "small",
+                        "medium",
+                        "large"
+                      ]
+                    },
+                    "deltaSecs": {
+                      "type": "number"
+                    },
+                    "deltaCount": {
+                      "type": "number"
+                    },
+                    "deltaAmount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "effect",
+                    "magnitude"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "strategy",
+              "primaryFactors",
+              "tradeoffs"
+            ],
+            "additionalProperties": false
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "rank": {
+                  "type": "number"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "recommended": {
+                  "type": "boolean"
+                },
+                "selectedFor": {
+                  "type": "string",
+                  "enum": [
+                    "balanced",
+                    "fastest",
+                    "fewestTransfers",
+                    "lowestFare",
+                    "shortestWalk"
+                  ]
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "high",
+                    "medium",
+                    "low"
+                  ]
+                },
+                "metrics": {
+                  "type": "object",
+                  "properties": {
+                    "durationSecs": {
+                      "type": "number"
+                    },
+                    "transitSecs": {
+                      "type": "number"
+                    },
+                    "walkSecs": {
+                      "type": "number"
+                    },
+                    "waitSecs": {
+                      "type": "number"
+                    },
+                    "transferCount": {
+                      "type": "number"
+                    },
+                    "headwayLegCount": {
+                      "type": "number"
+                    },
+                    "fare": {
+                      "type": "object",
+                      "properties": {
+                        "currency": {
+                          "type": "string"
+                        },
+                        "ticket": {
+                          "type": "number",
+                          "description": "きっぷ運賃."
+                        },
+                        "ic": {
+                          "type": "number",
+                          "description": "ICカード運賃, when the source distinguishes it."
+                        }
+                      },
+                      "required": [
+                        "currency",
+                        "ticket"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "durationSecs",
+                    "transitSecs",
+                    "walkSecs",
+                    "waitSecs",
+                    "transferCount",
+                    "headwayLegCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "load": {
+                  "type": "object",
+                  "properties": {
+                    "overall": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "walking": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "waiting": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "transfer": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "uncertainty": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "overall",
+                    "walking",
+                    "waiting",
+                    "transfer",
+                    "uncertainty"
+                  ],
+                  "additionalProperties": false
+                },
+                "decisionFactors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "arrivalTime",
+                          "duration",
+                          "transferBurden",
+                          "fare",
+                          "walkingBurden",
+                          "waitingBurden",
+                          "reliability",
+                          "directness"
+                        ]
+                      },
+                      "effect": {
+                        "type": "string",
+                        "enum": [
+                          "advantage",
+                          "tradeoff",
+                          "risk"
+                        ]
+                      },
+                      "magnitude": {
+                        "type": "string",
+                        "enum": [
+                          "small",
+                          "medium",
+                          "large"
+                        ]
+                      },
+                      "deltaSecs": {
+                        "type": "number"
+                      },
+                      "deltaCount": {
+                        "type": "number"
+                      },
+                      "deltaAmount": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "effect",
+                      "magnitude"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "nextAction": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "walk",
+                        "wait",
+                        "board"
+                      ]
+                    },
+                    "from": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "platformCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "to": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "platformCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "departureSecs": {
+                      "type": "number"
+                    },
+                    "timeBudgetSecs": {
+                      "type": "number"
+                    },
+                    "routeName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "from",
+                    "departureSecs",
+                    "timeBudgetSecs"
+                  ],
+                  "additionalProperties": false
+                },
+                "map": {
+                  "type": "object",
+                  "properties": {
+                    "bounds": {
+                      "type": "object",
+                      "properties": {
+                        "minLat": {
+                          "type": "number"
+                        },
+                        "minLon": {
+                          "type": "number"
+                        },
+                        "maxLat": {
+                          "type": "number"
+                        },
+                        "maxLon": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "minLat",
+                        "minLon",
+                        "maxLat",
+                        "maxLon"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "points": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "lat": {
+                            "type": "number"
+                          },
+                          "lon": {
+                            "type": "number"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "origin",
+                              "destination",
+                              "stop",
+                              "transfer"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "lat",
+                          "lon",
+                          "role"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "segments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "walk",
+                              "transit"
+                            ]
+                          },
+                          "fromPointId": {
+                            "type": "string"
+                          },
+                          "toPointId": {
+                            "type": "string"
+                          },
+                          "routeName": {
+                            "type": "string"
+                          },
+                          "color": {
+                            "type": "string"
+                          },
+                          "geometrySource": {
+                            "type": "string",
+                            "enum": [
+                              "osmWalk",
+                              "estimatedWalk",
+                              "gtfsShape",
+                              "gsiRailCenterline",
+                              "openRailwayMap",
+                              "stopOrder",
+                              "direct"
+                            ]
+                          },
+                          "fallbackReason": {
+                            "type": "string",
+                            "enum": [
+                              "noWalkingGraph",
+                              "networkUnreachable"
+                            ]
+                          },
+                          "polyline": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "lat": {
+                                  "type": "number"
+                                },
+                                "lon": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "lat",
+                                "lon"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "fromPointId",
+                          "toPointId",
+                          "geometrySource",
+                          "polyline"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "bounds",
+                    "points",
+                    "segments"
+                  ],
+                  "additionalProperties": false
+                },
+                "journey": {
+                  "type": "object",
+                  "properties": {
+                    "departureSecs": {
+                      "type": "number"
+                    },
+                    "arrivalSecs": {
+                      "type": "number"
+                    },
+                    "durationSecs": {
+                      "type": "number"
+                    },
+                    "transferCount": {
+                      "type": "number"
+                    },
+                    "fare": {
+                      "type": "object",
+                      "properties": {
+                        "currency": {
+                          "type": "string"
+                        },
+                        "ticket": {
+                          "type": "number",
+                          "description": "きっぷ運賃."
+                        },
+                        "ic": {
+                          "type": "number",
+                          "description": "ICカード運賃, when the source distinguishes it."
+                        }
+                      },
+                      "required": [
+                        "currency",
+                        "ticket"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "accessWalkSecs": {
+                      "type": "number",
+                      "description": "Walk from the geographic origin to the first stop (geo queries only)."
+                    },
+                    "egressWalkSecs": {
+                      "type": "number",
+                      "description": "Walk from the last stop to the geographic destination (geo queries only)."
+                    },
+                    "legs": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "transit"
+                                ]
+                              },
+                              "routeName": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string"
+                              },
+                              "color": {
+                                "type": "string"
+                              },
+                              "headsign": {
+                                "type": "string"
+                              },
+                              "tripId": {
+                                "type": "string"
+                              },
+                              "from": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "platformCode": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "to": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "platformCode": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "departureSecs": {
+                                "type": "number"
+                              },
+                              "arrivalSecs": {
+                                "type": "number"
+                              },
+                              "headwayBased": {
+                                "type": "boolean",
+                                "description": "True when times are worst-case bounds from headway operation."
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "routeName",
+                              "mode",
+                              "tripId",
+                              "from",
+                              "to",
+                              "departureSecs",
+                              "arrivalSecs",
+                              "headwayBased"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "walk"
+                                ]
+                              },
+                              "from": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "platformCode": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "to": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "platformCode": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "departureSecs": {
+                                "type": "number"
+                              },
+                              "arrivalSecs": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "from",
+                              "to",
+                              "departureSecs",
+                              "arrivalSecs"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "departureSecs",
+                    "arrivalSecs",
+                    "durationSecs",
+                    "transferCount",
+                    "legs"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "rank",
+                "score",
+                "recommended",
+                "selectedFor",
+                "confidence",
+                "metrics",
+                "load",
+                "decisionFactors",
+                "journey"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "date",
+          "type",
+          "timezone",
+          "from",
+          "to",
+          "live",
+          "osm",
+          "coverage",
+          "decision",
+          "options"
+        ],
+        "additionalProperties": false
+      },
+      "OperatorBrandingResponse": {
+        "type": "object",
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "description": "ISO timestamp the registry was generated."
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Stable operator id, e.g. \"odpt.Operator:Keikyu\" or \"feed:hanshin-rail\"."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Official name, e.g. \"京浜急行電鉄\"."
+                },
+                "nameShort": {
+                  "type": "string",
+                  "description": "Display short name, e.g. \"京急\"."
+                },
+                "mark": {
+                  "type": "string",
+                  "description": "Short monogram shown when no licensed logo asset exists, e.g. \"KK\"."
+                },
+                "brandColor": {
+                  "type": "string",
+                  "description": "Corporate brand color (hex, \"#rrggbb\"); absent when no single authoritative color is known."
+                },
+                "feedIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Feeds whose legs belong to this operator (the feedId prefix of their ids)."
+                },
+                "dataLicense": {
+                  "type": "string",
+                  "description": "Data license shared by this operator's feeds (e.g. \"CC BY 4.0\")."
+                },
+                "dataAttribution": {
+                  "type": "string",
+                  "description": "Required data attribution, when the source mandates one."
+                },
+                "termsUrl": {
+                  "type": "string",
+                  "description": "Usage-terms / permission page (e.g. an ODPT operator data page)."
+                },
+                "logo": {
+                  "type": "object",
+                  "properties": {
+                    "asset": {
+                      "type": "string",
+                      "description": "Asset path served under the operator-logo base (operators/logos/...)."
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "svg",
+                        "png"
+                      ]
+                    },
+                    "license": {
+                      "type": "string",
+                      "description": "License of the logo asset itself (e.g. \"Public domain\", \"CC BY-SA 4.0\")."
+                    },
+                    "attribution": {
+                      "type": "string",
+                      "description": "Required credit line for the asset."
+                    },
+                    "source": {
+                      "type": "string",
+                      "description": "Human-readable source (e.g. \"Wikimedia Commons\", \"事業者提供\")."
+                    },
+                    "sourceUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "asset",
+                    "format",
+                    "license",
+                    "attribution",
+                    "source"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Present only when a license-cleared logo asset has been acquired."
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "nameShort",
+                "mark",
+                "feedIds",
+                "dataLicense"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "generatedAt",
+          "operators"
+        ],
+        "additionalProperties": false
+      },
+      "Map3dSceneResponse": {
+        "type": "object",
+        "properties": {
+          "layers": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "building"
+                      ]
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "plateau"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "3dtiles"
+                      ]
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "areaCode": {
+                      "type": "string"
+                    },
+                    "areaName": {
+                      "type": "string"
+                    },
+                    "featureType": {
+                      "type": "string",
+                      "enum": [
+                        "bldg"
+                      ]
+                    },
+                    "lod": {
+                      "type": "string",
+                      "enum": [
+                        "maxlod1",
+                        "maxlod2"
+                      ]
+                    },
+                    "textureMode": {
+                      "type": "string",
+                      "enum": [
+                        "auto",
+                        "notexture",
+                        "texture"
+                      ]
+                    },
+                    "attribution": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "provider",
+                    "format",
+                    "url",
+                    "areaCode",
+                    "areaName",
+                    "featureType",
+                    "lod",
+                    "textureMode",
+                    "attribution"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "surface"
+                      ]
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "gsi"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "raster"
+                      ]
+                    },
+                    "tiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 1
+                    },
+                    "tileSize": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
+                    },
+                    "minZoom": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "maxZoom": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "attribution": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "provider",
+                    "format",
+                    "tiles",
+                    "tileSize",
+                    "minZoom",
+                    "maxZoom",
+                    "attribution"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "info",
+                    "warning"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "unsupportedArea",
+                    "layerLimit",
+                    "zoomRequired"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "layers",
+          "notices"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

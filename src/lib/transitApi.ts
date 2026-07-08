@@ -1,0 +1,112 @@
+// TransitAPI (https://api.transit.ls8h.com) クライアント。
+// 公開・CORS対応・APIキー不要のため、サーバープロキシを介さずクライアントから直接呼び出す。
+
+const TRANSIT_API_BASE = "https://api.transit.ls8h.com";
+
+// 学校専用のスクール便CSVには存在しないため、TransitAPI側では
+// 大学近隣のOSM地点（北海道情報大学）を固定の目的地として使う。
+export const JOHODAI = {
+  id: "geo:43.077892,141.536019",
+  name: "北海道情報大学",
+};
+
+export interface PlaceSuggestion {
+  id: string;
+  endpoint: string;
+  name: string;
+  kind: "station" | "stop" | "place" | "address";
+  description?: string;
+  nameKana?: string;
+}
+
+export async function suggestPlaces(query: string, limit = 10): Promise<PlaceSuggestion[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  try {
+    const url = new URL("/api/v1/places/suggest", TRANSIT_API_BASE);
+    url.searchParams.set("q", trimmed);
+    url.searchParams.set("limit", String(limit));
+    const res = await fetch(url.toString());
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.places) ? data.places : [];
+  } catch (e) {
+    console.error("TransitAPI suggestPlaces failed:", e);
+    return [];
+  }
+}
+
+export interface PlanLeg {
+  kind: "transit" | "walk";
+  routeName?: string;
+  mode?: string;
+  headsign?: string;
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  departureSecs: number;
+  arrivalSecs: number;
+}
+
+export interface Journey {
+  departureSecs: number;
+  arrivalSecs: number;
+  durationSecs: number;
+  transferCount: number;
+  legs: PlanLeg[];
+}
+
+export interface PlanParams {
+  from: string;
+  to: string;
+  fromLabel?: string;
+  toLabel?: string;
+  type?: "departure" | "arrival" | "first" | "last";
+  time?: string;
+  numItineraries?: number;
+}
+
+export type PlanResult =
+  | { ok: true; journeys: Journey[] }
+  | { ok: false; error: string };
+
+export async function planJourney(params: PlanParams): Promise<PlanResult> {
+  try {
+    const url = new URL("/api/v1/plan", TRANSIT_API_BASE);
+    url.searchParams.set("from", params.from);
+    url.searchParams.set("to", params.to);
+    if (params.fromLabel) url.searchParams.set("fromLabel", params.fromLabel);
+    if (params.toLabel) url.searchParams.set("toLabel", params.toLabel);
+    url.searchParams.set("type", params.type ?? "departure");
+    if (params.time) url.searchParams.set("time", params.time);
+    url.searchParams.set("numItineraries", String(params.numItineraries ?? 4));
+
+    const res = await fetch(url.toString());
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      const message =
+        typeof data.error === "string" ? data.error : data.error?.message || "経路検索に失敗しました";
+      return { ok: false, error: message };
+    }
+
+    return { ok: true, journeys: Array.isArray(data.journeys) ? data.journeys : [] };
+  } catch (e) {
+    console.error("TransitAPI planJourney failed:", e);
+    return { ok: false, error: "経路検索に失敗しました" };
+  }
+}
+
+// TransitAPIの時刻は0時起点の秒数(24h超・負値もあり得る)。表示用にHH:MM文字列へ変換する。
+export function formatClock(secs: number): string {
+  const normalized = Math.round(secs / 60) * 60;
+  const totalMinutes = Math.floor(normalized / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
+// "HH:MM" → 0時起点の秒数
+export function clockToSecs(clock: string): number {
+  const [h, m] = clock.split(":").map((v) => parseInt(v, 10));
+  return (h || 0) * 3600 + (m || 0) * 60;
+}

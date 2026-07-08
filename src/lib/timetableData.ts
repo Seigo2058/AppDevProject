@@ -1,5 +1,6 @@
 export interface RouteStop {
   route_id: string;
+  transportType: string; // "バス" | "JR"
   routeName: string;
   stops: string[]; // カンマ区切りの文字列を配列に変換
 }
@@ -53,15 +54,16 @@ export async function fetchRouteStops(): Promise<RouteStop[]> {
     if (!res.ok) return [];
     const text = await res.text();
     const rows = parseCSVRow(text);
-    
-    // Header: route_id, 路線名, 停留所1, 停留所2, ...
+
+    // Header: route_id, 交通機関種別, 路線名, 停留所1, 停留所2, ...
     // データは2行目以降
-    return rows.slice(1).filter(r => r.length >= 3).map(row => {
-      // 停留所は3列目(インデックス2)以降の空でないセル
-      const stops = row.slice(2).map(s => s.trim()).filter(s => s !== '');
+    return rows.slice(1).filter(r => r.length >= 4).map(row => {
+      // 停留所は4列目(インデックス3)以降の空でないセル
+      const stops = row.slice(3).map(s => s.trim()).filter(s => s !== '');
       return {
         route_id: row[0],
-        routeName: row[1],
+        transportType: row[1],
+        routeName: row[2],
         stops: stops
       };
     });

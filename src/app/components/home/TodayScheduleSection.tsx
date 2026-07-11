@@ -11,6 +11,9 @@ import {
   parseCSV,
   fetchWithTimeout,
   getDaySchedule,
+  getComputedScheduleCache,
+  setComputedScheduleCache,
+  formatRouteLabel,
 } from "@/lib/schedule";
 import RouteLegCard from "./RouteLegCard";
 
@@ -92,12 +95,20 @@ export default function TodayScheduleSection() {
         return;
       }
 
-      setIsComputing(true);
       const dayStr = days[dayIndex - 1];
+
+      const cached = getComputedScheduleCache(boarding, schedule, [dayStr]);
+      if (cached) {
+        if (!cancelled) setDayPlan(cached[dayStr]);
+        return;
+      }
+
+      setIsComputing(true);
       const plan = await getDaySchedule(dayStr, schedule, scheduleData.periods, boarding);
       if (!cancelled) {
         setDayPlan(plan);
         setIsComputing(false);
+        setComputedScheduleCache(boarding, schedule, { [dayStr]: plan });
       }
     }
     compute();
@@ -175,7 +186,7 @@ export default function TodayScheduleSection() {
           {dayPlan.outbound && (
             <RouteLegCard
               label="行き"
-              methodLabel={dayPlan.outbound.isSchoolBus ? "スクール便" : dayPlan.outbound.routeName || "路線バス"}
+              methodLabel={dayPlan.outbound.isSchoolBus ? "スクール便" : formatRouteLabel(dayPlan.outbound.routeName || "路線バス")}
               departureTime={dayPlan.outbound.departureTime}
               departureStop={boarding.name}
               departureIcon={Bus}
@@ -187,7 +198,7 @@ export default function TodayScheduleSection() {
           {dayPlan.inbound && (
             <RouteLegCard
               label="帰り"
-              methodLabel={dayPlan.inbound.isSchoolBus ? "スクール便" : dayPlan.inbound.routeName || "路線バス"}
+              methodLabel={dayPlan.inbound.isSchoolBus ? "スクール便" : formatRouteLabel(dayPlan.inbound.routeName || "路線バス")}
               departureTime={dayPlan.inbound.departureTime}
               departureStop={dayPlan.inbound.stopLabel}
               departureIcon={GraduationCap}

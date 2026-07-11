@@ -1,5 +1,4 @@
-import { JOHODAI, planJourney, formatClock } from "./transitApi";
-import { planOutboundCsvJourney, planInboundCsvJourney } from "./tripGraph";
+import { planOutboundLeg, planInboundLeg } from "./journeyPlanner";
 
 export interface ClassPeriod {
   id: number;
@@ -13,6 +12,17 @@ export type BoardingSelection =
   | { source: "csv"; name: string }
   | { source: "transit"; id: string; name: string };
 
+// 経路の中の1本の乗り物区間（CSV区間・TransitAPI区間どちらから来たものも同じ形に正規化する）。
+// 出発地→到着地の道のり画面で、乗換ごとの内訳を表示するために使う。
+export interface JourneySegment {
+  mode: "bus" | "train" | "transit" | "walk";
+  routeName?: string;
+  fromStop: string;
+  toStop: string;
+  departureTime: string;
+  arrivalTime: string;
+}
+
 // CSV経路・TransitAPI経路のどちらで計算しても同じ形になるよう正規化した1本のバス脚。
 export interface CommuteLeg {
   departureTime: string; // 乗車時刻 "H:MM" 表示用
@@ -20,6 +30,7 @@ export interface CommuteLeg {
   stopLabel: string; // 反対側の停留所・目的地表示名
   isSchoolBus: boolean;
   routeName?: string;
+  segments?: JourneySegment[]; // 乗換込みの内訳（道のり画面用）。取得できない場合は省略される。
 }
 
 export interface DayPlan {
@@ -70,6 +81,106 @@ export function timeToMinutes(timeStr: string): number {
   }
 }
 
+// 計算済みの1週間分プラン（DayPlan）をlocalStorageにキャッシュし、乗車停留所・時間割が
+// 変わっていない限り、ページ遷移のたびにTransitAPI/CSVへ問い合わせて再計算しないようにする。
+// v2: 帰りの授業終了後5分バッファ（CLASS_EXIT_BUFFER_MINS）を撤廃した計算ロジックの変更。
+// v3: 帰りの経路選択基準を「出発が最も早い」から「到着が最も早い」に修正した変更
+// （TransitAPIの徒歩オンリー案が、実在するバス便より誤って優先されていた不具合の修正）。
+// v4: 函館本線（JR）の時刻表CSVを新しいデータに差し替えたため。
+// v5: 函館本線を岩見沢〜札幌の全区間（11駅）に拡張し、拡張路線の停留所を追加したため。
+// v6: 検索経由でTransitAPI由来として選ばれた停留所名がCSV路線網の駅名と一致する場合に、
+// CSV単独経路を試さず、かつ自分自身への無意味なハイブリッド乗換候補（不自然な徒歩案の
+// 原因）を作ってしまっていた不具合の修正。
+// v7: JR函館本線に到着(着)/出発(発)別の時刻データを導入し、途中駅での停車時間を
+// 正確に扱うようにしたため（下り方向の岩見沢駅も追加）。
+// v8: TransitAPIへの同時リクエスト数を絞るセマフォを導入。過負荷による"Failed to fetch"で
+// 一部候補が欠落したまま計算・保存されていた可能性があるキャッシュを無効化するため。
+// v9: 経路探索をフォールバック方式に変更（CSV単独経路が見つかればそれを採用し、見つから
+// ない場合のみハイブリッド探索を行う。TransitAPI単独の直行経路は候補から除外）。
+// 計算ロジック・元データを変えるたびにキー名を変更し、古い内容で計算済みのキャッシュを
+// 確実に無効化する。
+const COMPUTED_CACHE_KEY = "commute_computed_schedule_cache_v9";
+
+interface ComputedScheduleCache {
+  cacheKey: string;
+  plans: Record<string, DayPlan | null>;
+}
+
+// boarding・schedule（曜日ごとの選択状態）が同じであれば同じキャッシュキーになる。
+// 曜日の並び順に依存しないよう、比較前にソートしておく。
+function buildCacheKey(boarding: BoardingSelection, schedule: string[]): string {
+  return JSON.stringify({ boarding, schedule: [...schedule].sort() });
+}
+
+function readComputedCache(): ComputedScheduleCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(COMPUTED_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.cacheKey === "string" && parsed.plans && typeof parsed.plans === "object") {
+      return parsed as ComputedScheduleCache;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// boarding・scheduleに対応するキャッシュのうち、requiredDaysを全て含んでいる場合のみ返す。
+// 1曜日だけキャッシュされている状態（ホーム画面の「本日」のみの計算等）を、
+// 週全体がキャッシュ済みであるかのように誤認しないための完全性チェック。
+export function getComputedScheduleCache(
+  boarding: BoardingSelection,
+  schedule: string[],
+  requiredDays: string[]
+): Record<string, DayPlan | null> | null {
+  const cache = readComputedCache();
+  if (!cache || cache.cacheKey !== buildCacheKey(boarding, schedule)) return null;
+  const hasAll = requiredDays.every((day) => Object.prototype.hasOwnProperty.call(cache.plans, day));
+  return hasAll ? cache.plans : null;
+}
+
+// 新たに計算した結果をキャッシュに書き込む。boarding・scheduleが前回と同じであれば
+// 既存の他の曜日の結果とマージし、異なっていれば（設定が変わったため）作り直す。
+export function setComputedScheduleCache(
+  boarding: BoardingSelection,
+  schedule: string[],
+  planUpdates: Record<string, DayPlan | null>
+) {
+  if (typeof window === "undefined") return;
+  const cacheKey = buildCacheKey(boarding, schedule);
+  const existing = readComputedCache();
+  const basePlans = existing && existing.cacheKey === cacheKey ? existing.plans : {};
+  try {
+    localStorage.setItem(
+      COMPUTED_CACHE_KEY,
+      JSON.stringify({ cacheKey, plans: { ...basePlans, ...planUpdates } })
+    );
+  } catch (e) {
+    console.error("Failed to persist computed schedule cache:", e);
+  }
+}
+
+const ROUTE_SEGMENT_MAX_LENGTH = 5;
+const ROUTE_SEGMENT_VISIBLE_COUNT = 2;
+
+function truncateRouteSegment(name: string): string {
+  return name.length > ROUTE_SEGMENT_MAX_LENGTH ? `${name.slice(0, ROUTE_SEGMENT_MAX_LENGTH)}…` : name;
+}
+
+// 乗換込みの路線名（"路線A → 路線B" 形式）をカード幅に収まるよう省略する。
+// 乗換が無い（区間が1件のみの）場合は省略せずそのまま表示する。
+// 乗換がある場合、各路線名は最大5文字+"…"、3件以上ある場合は3件目以降を"→…"にまとめる。
+// ホーム画面・時間割画面のどちらのカードでも同じ表記になるよう、ここに集約する。
+export function formatRouteLabel(routeName: string): string {
+  const segments = routeName.split(" → ").map((s) => s.trim()).filter(Boolean);
+  if (segments.length <= 1) return routeName;
+
+  const visible = segments.slice(0, ROUTE_SEGMENT_VISIBLE_COUNT).map(truncateRouteSegment);
+  return segments.length > ROUTE_SEGMENT_VISIBLE_COUNT ? `${visible.join(" → ")}→…` : visible.join(" → ");
+}
+
 // タイムアウト付きのフェッチヘルパー
 export async function fetchWithTimeout(url: string, ms = 8000) {
   const controller = new AbortController();
@@ -82,123 +193,6 @@ export async function fetchWithTimeout(url: string, ms = 8000) {
     clearTimeout(id);
     throw error;
   }
-}
-
-// 自前の時刻表CSV（route_stops_list.csv / timetable_list.csv に登録された全路線）から、
-// 指定停留所での最適な行き/帰りの便を求める。直通経路が無くても1回の乗換（例: JR→バス）で
-// 大学へ到達できる経路をtripGraphが探索するため、TransitAPIが対応していない区間もここでカバーできる。
-async function getCsvLegs(
-  boardingStop: string,
-  startMins: number,
-  endMins: number
-): Promise<{ outbound: CommuteLeg | null; inbound: CommuteLeg | null }> {
-  const [outboundJourney, inboundJourney] = await Promise.all([
-    planOutboundCsvJourney(boardingStop, startMins),
-    planInboundCsvJourney(boardingStop, endMins),
-  ]);
-
-  return {
-    outbound: outboundJourney
-      ? {
-          departureTime: outboundJourney.departureTime,
-          arrivalTime: outboundJourney.arrivalTime,
-          stopLabel: outboundJourney.legs[outboundJourney.legs.length - 1].toStop,
-          isSchoolBus: false,
-          routeName: outboundJourney.routeName,
-        }
-      : null,
-    inbound: inboundJourney
-      ? {
-          departureTime: inboundJourney.departureTime,
-          arrivalTime: inboundJourney.arrivalTime,
-          stopLabel: inboundJourney.legs[0].fromStop,
-          isSchoolBus: false,
-          routeName: inboundJourney.routeName,
-        }
-      : null,
-  };
-}
-
-// 実際のバス到着時刻は秒単位（例: 9:00:44）でGTFSの補間誤差が乗ることがあるため、
-// 分単位で指定される授業時刻との比較には数分の許容誤差を持たせる。
-const ON_TIME_TOLERANCE_SECS = 3 * 60;
-// 帰りの検索で「同日中に妥当な便」とみなす範囲。これを超えて次の日にずれ込むような
-// 結果は、実質的に「便が見つからない」ものとして扱う。
-const SAME_DAY_WINDOW_SECS = 6 * 60 * 60;
-
-// TransitAPIの一般路線から、指定の駅・停留所での最適な行き/帰りの便を求める。
-async function getTransitLegs(
-  boarding: { id: string; name: string },
-  startMins: number,
-  endMins: number
-): Promise<{ outbound: CommuteLeg | null; inbound: CommuteLeg | null }> {
-  const classStartSecs = startMins * 60;
-  const classEndSecs = endMins * 60;
-
-  const lookbackSecs = Math.max(classStartSecs - 90 * 60, 0);
-  const lookbackClock = formatClock(lookbackSecs);
-  const classEndClock = formatClock(classEndSecs);
-
-  const [outboundResult, inboundResult] = await Promise.all([
-    planJourney({
-      from: boarding.id,
-      to: JOHODAI.id,
-      fromLabel: boarding.name,
-      toLabel: JOHODAI.name,
-      type: "departure",
-      time: lookbackClock,
-      numItineraries: 6,
-    }),
-    planJourney({
-      from: JOHODAI.id,
-      to: boarding.id,
-      fromLabel: JOHODAI.name,
-      toLabel: boarding.name,
-      type: "departure",
-      time: classEndClock,
-      numItineraries: 6,
-    }),
-  ]);
-
-  let outbound: CommuteLeg | null = null;
-  if (outboundResult.ok && outboundResult.journeys.length > 0) {
-    // 授業開始までに到着する便のうち、最も出発が遅い（＝待ち時間が短い）ものを選ぶ。
-    // 該当が無ければ「間に合う便が無い」として null を返す（誤った時刻を出さない）。
-    const onTime = outboundResult.journeys.filter((j) => j.arrivalSecs <= classStartSecs + ON_TIME_TOLERANCE_SECS);
-    if (onTime.length > 0) {
-      const best = onTime.reduce((a, b) => (b.departureSecs > a.departureSecs ? b : a));
-      outbound = {
-        departureTime: formatClock(best.departureSecs),
-        arrivalTime: formatClock(best.arrivalSecs),
-        stopLabel: JOHODAI.name,
-        isSchoolBus: false,
-        routeName: best.legs.find((l) => l.kind === "transit")?.routeName,
-      };
-    }
-  }
-
-  let inbound: CommuteLeg | null = null;
-  if (inboundResult.ok && inboundResult.journeys.length > 0) {
-    // 授業終了後、同日中に出発する便のうち最も早いものを選ぶ。
-    // 同日中に見つからなければ（翌日便への飛びなど）「見つからない」扱いにする。
-    const onTime = inboundResult.journeys.filter(
-      (j) =>
-        j.departureSecs >= classEndSecs - ON_TIME_TOLERANCE_SECS &&
-        j.departureSecs <= classEndSecs + SAME_DAY_WINDOW_SECS
-    );
-    if (onTime.length > 0) {
-      const best = onTime.reduce((a, b) => (b.departureSecs < a.departureSecs ? b : a));
-      inbound = {
-        departureTime: formatClock(best.departureSecs),
-        arrivalTime: formatClock(best.arrivalSecs),
-        stopLabel: JOHODAI.name,
-        isSchoolBus: false,
-        routeName: best.legs.find((l) => l.kind === "transit")?.routeName,
-      };
-    }
-  }
-
-  return { outbound, inbound };
 }
 
 export async function getDaySchedule(
@@ -233,10 +227,10 @@ export async function getDaySchedule(
 
     if (startMins === -1 || endMins === -1) return null;
 
-    const { outbound, inbound } =
-      boarding.source === "csv"
-        ? await getCsvLegs(boarding.name, startMins, endMins)
-        : await getTransitLegs(boarding, startMins, endMins);
+    const [outbound, inbound] = await Promise.all([
+      planOutboundLeg(boarding, startMins),
+      planInboundLeg(boarding, endMins),
+    ]);
 
     return {
       minPeriod: minPeriodId,

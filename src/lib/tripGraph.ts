@@ -3,26 +3,14 @@
 // 総当たりで探索する。TransitAPIがカバーしないスクール便・独自路線のためのフォールバック経路探索。
 
 import { fetchTimetableList, fetchRouteStops, fetchTimetableData } from "./timetableData";
+import { canonicalStopName, CAMPUS_CANONICAL_STOPS } from "./stopRegistry";
 
-// 停留所名の表記ゆれ（JR「野幌駅」とバス「野幌駅北口/南口」など、同一駅の異なる出入口・
-// 異なるCSV上の呼び方）を吸収し、同じ地点として乗換検索できるようにする。
-// 「厚別駅」(JR)と「厚別中央2条6丁目」(バス)のように、名前は似ていても実際には
-// 離れた別地点のものは正規化後も別の文字列になるため誤って統合されない。
-export function canonicalStopName(name: string): string {
-  return name
-    .replace(/\([^)]*\)/g, "")
-    .replace(/(北口|南口|東口|西口)$/, "")
-    .trim();
-}
-
-const CAMPUS_CANONICAL_STOPS = new Set(["情報大学前", "eDCタワー前"]);
+export { canonicalStopName };
 
 // 同一駅での乗換に最低限見込む時間（分）
 const TRANSFER_BUFFER_MINS = 3;
 // これを超える待ち時間が生じる乗換は非現実的として候補から除外する
 const MAX_TRANSFER_WAIT_MINS = 90;
-// 授業開始/終了時刻との比較に許容する誤差（分）
-const ON_TIME_TOLERANCE_MINS = 3;
 // 帰りの経路で「同日中に妥当な便」とみなす範囲
 const SAME_DAY_WINDOW_MINS = 6 * 60;
 
@@ -41,7 +29,32 @@ interface RouteRun {
   routeName: string;
   transportType: string;
   stops: string[]; // 正規化済みの停留所名。CSVの列順（=進行方向順）
-  rows: string[][]; // 各行が1本の便。列はstopsに対応
+  arrivalRows: string[][]; // 各行が1本の便。列はstopsに対応する到着時刻
+  departureRows: string[][]; // 各行が1本の便。列はstopsに対応する出発時刻
+}
+
+// JR函館本線のように停車駅ごとに到着(着)と出発(発)の時刻が別々に記録されているCSVかどうかを
+// ヘッダーから判定する（例: "野幌着","野幌発"）。該当すれば停留所名（"駅"を補った正規化名）
+// ごとの到着/出発列インデックスを返す。単純な「停留所名のみ」形式（バス等、停車時間を
+// 区別しないもの）の場合はnullを返し、従来通り1列＝1停留所として扱う。
+function parseArrivalDepartureHeader(
+  header: string[]
+): Map<string, { arrivalCol: number | null; departureCol: number | null }> | null {
+  const map = new Map<string, { arrivalCol: number | null; departureCol: number | null }>();
+  let matched = false;
+  header.forEach((col, i) => {
+    const trimmed = col.trim();
+    const isArrival = trimmed.endsWith("着");
+    const isDeparture = !isArrival && trimmed.endsWith("発");
+    if (!isArrival && !isDeparture) return;
+    matched = true;
+    const stopName = canonicalStopName(`${trimmed.slice(0, -1)}駅`);
+    const entry = map.get(stopName) ?? { arrivalCol: null, departureCol: null };
+    if (isArrival) entry.arrivalCol = i;
+    else entry.departureCol = i;
+    map.set(stopName, entry);
+  });
+  return matched ? map : null;
 }
 
 const routeRunCache = new Map<string, Promise<RouteRun[]>>();
@@ -57,13 +70,39 @@ async function buildRouteRuns(dayType: string): Promise<RouteRun[]> {
       if (!rawStops || rawStops.length === 0) return null;
       const data = await fetchTimetableData(t.csvFileName);
       if (data.length === 0) return null;
-      const rows = data.slice(1).filter((r) => r.length > 0);
+      const [header, ...rows] = data;
+      const validRows = rows.filter((r) => r.length > 0);
+      const stops = rawStops.map(canonicalStopName);
+
+      const adMap = parseArrivalDepartureHeader(header);
+      let arrivalRows: string[][];
+      let departureRows: string[][];
+      if (adMap) {
+        arrivalRows = validRows.map((row) =>
+          stops.map((s) => {
+            const cols = adMap.get(s);
+            return cols?.arrivalCol != null ? row[cols.arrivalCol] ?? "" : "";
+          })
+        );
+        departureRows = validRows.map((row) =>
+          stops.map((s) => {
+            const cols = adMap.get(s);
+            return cols?.departureCol != null ? row[cols.departureCol] ?? "" : "";
+          })
+        );
+      } else {
+        // 従来形式: 列＝停留所の位置的対応。到着・出発を区別しないため同じ値を共用する。
+        arrivalRows = validRows;
+        departureRows = validRows;
+      }
+
       return {
         routeId: t.route_id,
         routeName: t.routeName,
         transportType: t.transportType,
-        stops: rawStops.map(canonicalStopName),
-        rows,
+        stops,
+        arrivalRows,
+        departureRows,
       };
     })
   );
@@ -107,16 +146,17 @@ async function findAllJourneys(fromSet: Set<string>, toSet: Set<string>, dayType
   const runs = await loadRouteRuns(dayType);
   const journeys: CsvJourney[] = [];
 
-  // 直通経路: 同じ便の中でfromより後にtoが出てくる区間をそのまま利用する
+  // 直通経路: 同じ便の中でfromより後にtoが出てくる区間をそのまま利用する。
+  // fromでは出発時刻、toでは到着時刻を使う（駅ごとに停車時間があり得るため）。
   for (const run of runs) {
     const fromIdxs = stopIndexes(run.stops, fromSet);
     const toIdxs = stopIndexes(run.stops, toSet);
     for (const fi of fromIdxs) {
       for (const ti of toIdxs) {
         if (ti <= fi) continue;
-        for (const row of run.rows) {
-          const dep = row[fi];
-          const arr = row[ti];
+        for (let rowIdx = 0; rowIdx < run.departureRows.length; rowIdx++) {
+          const dep = run.departureRows[rowIdx][fi];
+          const arr = run.arrivalRows[rowIdx][ti];
           if (!dep || dep === "-" || !arr || arr === "-") continue;
           journeys.push({
             legs: [
@@ -159,16 +199,16 @@ async function findAllJourneys(fromSet: Set<string>, toSet: Set<string>, dayType
           for (const toIdx of toIdxs) {
             if (toIdx <= tiB) continue;
 
-            for (const rowA of runA.rows) {
-              const depA = rowA[fi];
-              const arrA = rowA[ti];
+            for (let rowAIdx = 0; rowAIdx < runA.departureRows.length; rowAIdx++) {
+              const depA = runA.departureRows[rowAIdx][fi];
+              const arrA = runA.arrivalRows[rowAIdx][ti]; // 乗換地点への到着時刻
               if (!depA || depA === "-" || !arrA || arrA === "-") continue;
               const arrAMins = timeToMinutes(arrA);
               if (arrAMins === -1) continue;
 
-              for (const rowB of runB.rows) {
-                const depB = rowB[tiB];
-                const arrB = rowB[toIdx];
+              for (let rowBIdx = 0; rowBIdx < runB.departureRows.length; rowBIdx++) {
+                const depB = runB.departureRows[rowBIdx][tiB]; // 乗換地点からの出発時刻
+                const arrB = runB.arrivalRows[rowBIdx][toIdx];
                 if (!depB || depB === "-" || !arrB || arrB === "-") continue;
                 const depBMins = timeToMinutes(depB);
                 if (depBMins === -1) continue;
@@ -220,7 +260,8 @@ export async function planOutboundCsvJourney(
 ): Promise<CsvJourney | null> {
   const from = new Set([canonicalStopName(boardingStopName)]);
   const journeys = await findAllJourneys(from, CAMPUS_CANONICAL_STOPS, dayType);
-  const onTime = journeys.filter((j) => timeToMinutes(j.arrivalTime) <= arriveByMins + ON_TIME_TOLERANCE_MINS);
+  // 授業開始時刻より後に大学へ到着する便は間に合わないため除外する（許容誤差は設けない）。
+  const onTime = journeys.filter((j) => timeToMinutes(j.arrivalTime) <= arriveByMins);
   if (onTime.length === 0) return null;
   return onTime.reduce((best, j) => (timeToMinutes(j.departureTime) > timeToMinutes(best.departureTime) ? j : best));
 }
@@ -235,7 +276,7 @@ export async function planInboundCsvJourney(
   const journeys = await findAllJourneys(CAMPUS_CANONICAL_STOPS, to, dayType);
   const onTime = journeys.filter((j) => {
     const dep = timeToMinutes(j.departureTime);
-    return dep >= departAfterMins - ON_TIME_TOLERANCE_MINS && dep <= departAfterMins + SAME_DAY_WINDOW_MINS;
+    return dep >= departAfterMins && dep <= departAfterMins + SAME_DAY_WINDOW_MINS;
   });
   if (onTime.length === 0) return null;
   return onTime.reduce((best, j) => (timeToMinutes(j.departureTime) < timeToMinutes(best.departureTime) ? j : best));

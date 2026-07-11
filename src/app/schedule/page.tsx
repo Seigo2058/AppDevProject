@@ -1,21 +1,155 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, Bus, MapPin, Calendar, Check, GraduationCap, Info, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bus, MapPin, GraduationCap, Search, ChevronRight, Info } from "lucide-react";
 import {
   ClassPeriod,
   BoardingSelection,
   DayPlan,
+  CommuteLeg,
   days,
   dayFullNames,
   parseCSV,
   fetchWithTimeout,
   getDaySchedule,
+  getComputedScheduleCache,
+  setComputedScheduleCache,
+  formatRouteLabel,
 } from "@/lib/schedule";
 import { getCsvCoverageStops } from "@/lib/tripGraph";
+import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
 
+const ACCENT = "#aecb72";
+
+function InfoBadge({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`flex items-center justify-center size-4 rounded-full border shrink-0 text-[10px] font-bold ${className}`}
+      style={{ borderColor: ACCENT, color: ACCENT }}
+    >
+      !
+    </div>
+  );
+}
+
+function LegCard({
+  leftLabel,
+  leftTime,
+  leftName,
+  LeftIcon,
+  rightLabel,
+  rightTime,
+  rightName,
+  RightIcon,
+  centerLabel,
+  onClick,
+}: {
+  leftLabel: string;
+  leftTime: string;
+  leftName: string;
+  LeftIcon: typeof MapPin;
+  rightLabel: string;
+  rightTime: string;
+  rightName: string;
+  RightIcon: typeof MapPin;
+  centerLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="乗り換えの道のりを表示"
+      className="w-full text-left bg-[#fbfbfb] border border-[#e8e8e8] shadow-[0px_2px_6px_rgba(0,0,0,0.06)] rounded-lg pl-4 pr-8 py-3 flex items-center gap-2 relative cursor-pointer active:opacity-80 transition-opacity"
+    >
+      <div className="flex flex-col gap-1.5 shrink-0">
+        <p className="text-xs text-black/50">{leftLabel}</p>
+        <p className="text-base font-bold text-black">{leftTime}</p>
+        <div className="flex items-center gap-1 text-black">
+          <LeftIcon size={13} />
+          <span className="text-[10px]">{leftName}</span>
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-center gap-1.5 self-stretch pt-3 min-w-0">
+        <div className="w-full border-t border-dashed border-black/20" />
+        <div className="flex items-center gap-1 text-black/60 text-[10px] whitespace-nowrap">
+          <Bus size={13} />
+          <span>{centerLabel}</span>
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <p className="text-xs text-black/50">{rightLabel}</p>
+        <p className="text-base font-bold text-black">{rightTime}</p>
+        <div className="flex items-center gap-1 text-black">
+          <RightIcon size={13} />
+          <span className="text-[10px]">{rightName}</span>
+        </div>
+      </div>
+      <ChevronRight size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-black/30" />
+    </button>
+  );
+}
+
+function LegSection({
+  label,
+  leg,
+  direction,
+  boardingName,
+  emptyMessage,
+  onOpenDetail,
+}: {
+  label: string;
+  leg: CommuteLeg | null;
+  direction: "outbound" | "inbound";
+  boardingName: string;
+  emptyMessage: string;
+  onOpenDetail: (leg: CommuteLeg) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-medium text-black/80">{label}</p>
+      {leg ? (
+        direction === "outbound" ? (
+          <LegCard
+            leftLabel="出発時刻"
+            leftTime={leg.departureTime}
+            leftName={boardingName}
+            LeftIcon={MapPin}
+            rightLabel="大学到着時刻"
+            rightTime={leg.arrivalTime}
+            rightName={leg.stopLabel}
+            RightIcon={GraduationCap}
+            centerLabel={leg.isSchoolBus ? "スクール便" : formatRouteLabel(leg.routeName || "バス")}
+            onClick={() => onOpenDetail(leg)}
+          />
+        ) : (
+          <LegCard
+            leftLabel="大学乗車時刻"
+            leftTime={leg.departureTime}
+            leftName={leg.stopLabel}
+            LeftIcon={GraduationCap}
+            rightLabel="最寄り到着時刻"
+            rightTime={leg.arrivalTime}
+            rightName={boardingName}
+            RightIcon={MapPin}
+            centerLabel={leg.isSchoolBus ? "スクール便" : formatRouteLabel(leg.routeName || "バス")}
+            onClick={() => onOpenDetail(leg)}
+          />
+        )
+      ) : (
+        <div className="bg-red-50 text-red-600 text-xs font-bold p-3 rounded-lg border border-red-100">
+          {emptyMessage}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SchedulePage() {
+  const router = useRouter();
+
   // 読み込み状態
   const [periods, setPeriods] = useState<ClassPeriod[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -114,7 +248,8 @@ export default function SchedulePage() {
     getCsvCoverageStops().then(setCsvCoverageStops);
   }, []);
 
-  // 乗車停留所・駅が変わるたびに1週間分のプランをTransitAPI/CSVから再計算する
+  // 乗車停留所・時間割が変わった時だけ1週間分のプランをTransitAPI/CSVから再計算する。
+  // 同じ設定であれば、ページ遷移で再マウントされてもキャッシュ済みの結果をそのまま使う。
   useEffect(() => {
     let cancelled = false;
     async function computeAll() {
@@ -122,6 +257,13 @@ export default function SchedulePage() {
         if (!cancelled) setComputedSchedules({});
         return;
       }
+
+      const cached = getComputedScheduleCache(boarding, schedule, days);
+      if (cached) {
+        if (!cancelled) setComputedSchedules(cached);
+        return;
+      }
+
       setIsComputing(true);
       const entries = await Promise.all(
         days.map(async (day) => {
@@ -130,8 +272,10 @@ export default function SchedulePage() {
         })
       );
       if (cancelled) return;
-      setComputedSchedules(Object.fromEntries(entries));
+      const result = Object.fromEntries(entries);
+      setComputedSchedules(result);
       setIsComputing(false);
+      setComputedScheduleCache(boarding, schedule, result);
     }
     computeAll();
     return () => {
@@ -148,7 +292,14 @@ export default function SchedulePage() {
 
   const handleSearchSelect = (result: LocationSearchResult) => {
     setIsSearchOpen(false);
-    if (result.endpoint) {
+    // 検索候補の地点IDがCSV路線網の停留所と一致する場合は、CSV側の正規名で
+    // boardingを構築する。TransitAPIが返す表記（全角数字等、例:「厚別中央２条６丁目」）を
+    // そのまま使うと、CSV側の半角表記（「厚別中央2条6丁目」）と文字列が一致せず、
+    // CSV経路が見つかっているのに探索されない・ハイブリッド探索に回ってしまうため。
+    const csvStopName = findCsvStopNameByEndpoint(result.endpoint);
+    if (csvStopName) {
+      handleSetBoarding({ source: "csv", name: csvStopName });
+    } else if (result.endpoint) {
       handleSetBoarding({ source: "transit", id: result.endpoint, name: result.name });
     } else {
       handleSetBoarding({ source: "csv", name: result.name });
@@ -160,6 +311,12 @@ export default function SchedulePage() {
     if (typeof window !== "undefined") {
       localStorage.setItem("commute_is_editing", editing.toString());
     }
+  };
+
+  const openJourneyDetail = (day: string, direction: "outbound" | "inbound", leg: CommuteLeg, boardingName: string) => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem("commute_journey_detail", JSON.stringify({ day, direction, leg, boardingName }));
+    router.push("/schedule/journey");
   };
 
   const toggleClass = (day: string, periodId: number) => {
@@ -176,8 +333,11 @@ export default function SchedulePage() {
   // 簡易ローダー
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+      <div className="min-h-screen bg-[#eee] flex flex-col items-center justify-center space-y-4">
+        <div
+          className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent"
+          style={{ borderColor: ACCENT, borderTopColor: "transparent" }}
+        ></div>
         <p className="text-gray-500 font-bold">データを読み込んでいます...</p>
       </div>
     );
@@ -186,331 +346,195 @@ export default function SchedulePage() {
   // プライマリフェッチエラーのハンドラー
   if (error) {
     return (
-      <div className="p-6 text-center space-y-4 max-w-md mx-auto mt-10 bg-white rounded-2xl border border-gray-100 shadow-sm">
-        <div className="inline-flex bg-red-100 p-3 rounded-full text-red-600">
-          <Info size={32} />
+      <div className="min-h-screen bg-[#eee] flex items-center justify-center px-4">
+        <div className="p-6 text-center space-y-4 max-w-md w-full bg-white rounded-lg border border-[#e8e8e8] shadow-sm">
+          <div className="inline-flex bg-red-100 p-3 rounded-full text-red-600">
+            <Info size={32} />
+          </div>
+          <h3 className="text-lg font-bold text-gray-800">エラーが発生しました</h3>
+          <p className="text-sm text-red-500">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 px-4 py-2 text-white font-bold rounded-lg text-xs cursor-pointer"
+            style={{ backgroundColor: ACCENT }}
+          >
+            再読み込みする
+          </button>
         </div>
-        <h3 className="text-lg font-bold text-gray-800">エラーが発生しました</h3>
-        <p className="text-sm text-red-500">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs hover:bg-blue-700 transition-colors cursor-pointer"
-        >
-          再読み込みする
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-6 pb-24 max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#eee]">
+      <div className="max-w-2xl mx-auto px-4 pt-6 pb-8 space-y-4">
+        <h1 className="text-[20px] font-bold text-black">My時間割</h1>
 
-      {/* 登録・編集エリア (isEditing === true の時のみ表示) */}
-      {isEditing && (
-        <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-6 animate-in fade-in duration-200">
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2 text-gray-800">
-              <Bus className="text-blue-600 h-5 w-5" />
-              <h3 className="text-sm font-bold text-gray-800">乗車バス停の登録</h3>
-            </div>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              出発する最寄りの駅・停留所を検索してください。情報大学行きの運行状況と照らし合わせます。
-            </p>
-
-            <button
-              onClick={() => setIsSearchOpen(true)}
-              className="w-full py-3.5 pl-10 pr-10 rounded-xl text-sm font-bold bg-gray-50 border border-gray-200 text-gray-800 text-left cursor-pointer transition-all hover:bg-gray-100 relative"
-            >
-              {boarding ? boarding.name : "駅・停留所を検索"}
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <MapPin size={18} />
-              </div>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <Search size={16} />
-              </div>
-            </button>
-          </div>
-
-          <hr className="border-gray-100" />
-
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2 text-gray-800">
-              <Calendar className="text-blue-600 h-5 w-5" />
-              <h3 className="text-sm font-bold text-gray-800">授業時間割の登録</h3>
+        {isEditing ? (
+          /* 登録・編集エリア */
+          <section className="bg-[#fafafa] rounded-lg shadow-[0px_2px_6px_rgba(0,0,0,0.06)] overflow-hidden">
+            {/* バス停乗り場の登録 */}
+            <div className="relative px-4 pt-4 pb-6 space-y-4">
+              <InfoBadge className="absolute right-4 top-4" />
+              <p className="text-sm font-bold text-black">バス停乗り場の登録</p>
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="w-full bg-white border border-[#e8e8e8] rounded-lg p-4 flex items-center justify-between opacity-80 cursor-pointer"
+              >
+                <span className="text-sm font-bold text-black">{boarding ? boarding.name : "駅・停留所を検索"}</span>
+                <Search size={16} className="text-black/40 shrink-0" />
+              </button>
             </div>
 
-            <p className="text-xs text-gray-500">
-              授業がある「曜日 ✕ 時間目」のマスをタップして登録してください（再度タップすると解除）。
-            </p>
+            {/* 時間割の登録 */}
+            <div className="relative px-4 pt-6 pb-4 space-y-6">
+              <InfoBadge className="absolute right-4 top-6" />
+              <p className="text-sm font-bold text-black">時間割の登録</p>
 
-            <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0">
-              <div className="w-full min-w-[260px] sm:min-w-[340px] space-y-1.5">
-                {/* ヘッダー行 */}
+              <div className="space-y-2">
+                {/* 曜日ヘッダー */}
                 <div className="flex text-center">
-                  <div className="w-8 sm:w-10 shrink-0"></div>
+                  <div className="w-9 shrink-0" />
                   {days.map(day => (
-                    <div key={day} className="flex-1 text-xs font-black text-gray-500 py-1">
+                    <div key={day} className="flex-1 text-xs font-bold text-black">
                       {day}
                     </div>
                   ))}
                 </div>
 
-                {/* グリッド本体 */}
-                <div className="space-y-1">
-                  {periods.map((period) => (
-                    <div key={period.id} className="flex h-12 items-center">
-                      {/* 時間付きの授業ラベル */}
-                      <div className="w-8 sm:w-10 flex flex-col justify-center items-center text-center shrink-0">
-                        <span className="text-[10px] sm:text-[11px] font-black text-gray-800">{period.id}限</span>
-                        <span className="text-[7px] sm:text-[8px] text-gray-400 font-bold leading-none">{period.start}</span>
+                {/* 時限グリッド */}
+                <div className="space-y-2">
+                  {periods.map(period => (
+                    <div key={period.id} className="flex items-center h-12 gap-1">
+                      <div className="w-9 shrink-0 flex flex-col text-black">
+                        <span className="text-xs font-bold">{period.id}限</span>
+                        <span className="text-[11px] text-black/60">{period.start}</span>
                       </div>
-
-                      {/* インタラクティブな曜日 */}
-                      {days.map(day => {
-                        const scheduleArray = Array.isArray(schedule) ? schedule : [];
-                        const isSelected = scheduleArray.includes(`${day}-${period.id}`);
-                        return (
-                          <div key={`${day}-${period.id}`} className="flex-1 h-full px-0.5 py-0.5">
+                      <div className="flex flex-1 justify-between gap-2">
+                        {days.map(day => {
+                          const scheduleArray = Array.isArray(schedule) ? schedule : [];
+                          const isSelected = scheduleArray.includes(`${day}-${period.id}`);
+                          return (
                             <button
+                              key={`${day}-${period.id}`}
                               onClick={() => toggleClass(day, period.id)}
-                              className={`w-full h-full rounded-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer border ${
-                                isSelected
-                                  ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 font-black scale-[0.98]"
-                                  : "bg-gray-50 hover:bg-gray-200/70 border-gray-100 text-gray-400"
-                              }`}
-                            >
-                              {isSelected ? (
-                                <span className="text-xs text-white">✓</span>
-                              ) : (
-                                <span className="text-[9px] font-medium opacity-20">{period.id}限</span>
-                              )}
-                            </button>
-                          </div>
-                        );
-                      })}
+                              aria-pressed={isSelected}
+                              className="size-12 rounded-lg transition-colors cursor-pointer shrink-0"
+                              style={{ backgroundColor: isSelected ? ACCENT : "#d9d9d9" }}
+                            />
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
+
+              <button
+                onClick={() => handleSetIsEditing(false)}
+                className="w-full text-white font-bold text-sm py-[17px] rounded-lg cursor-pointer transition-opacity active:opacity-90"
+                style={{ backgroundColor: ACCENT }}
+              >
+                登録する
+              </button>
+            </div>
+          </section>
+        ) : (
+          /* 通学スケジュール表示エリア（画面遷移せず編集エリアと切り替わる） */
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-black">
+                1週間の最適な移動スケジュール
+                {isComputing && <span className="ml-2 text-xs font-bold animate-pulse" style={{ color: ACCENT }}>計算中...</span>}
+              </h2>
+              <button
+                onClick={() => handleSetIsEditing(true)}
+                className="text-[11px] font-bold cursor-pointer"
+                style={{ color: ACCENT }}
+              >
+                編集する
+              </button>
             </div>
 
-            <button
-              onClick={() => handleSetIsEditing(false)}
-              className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center hover:bg-blue-700 transition-colors active:scale-[0.99] cursor-pointer"
-            >
-              <Check size={18} className="mr-2" />
-              登録する
-            </button>
-          </div>
-        </section>
-      )}
+            {!boarding ? (
+              <div className="bg-[#fafafa] p-8 rounded-lg border border-[#e8e8e8] text-center">
+                <MapPin className="w-10 h-10 text-black/20 mx-auto mb-3" />
+                <p className="text-black/50 font-medium text-sm">
+                  乗車する駅・停留所を登録すると、
+                  <br />
+                  1週間の移動スケジュールを計算します。
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {days.map(day => {
+                  const plan = computedSchedules[day];
 
-      {/* 通学スケジュールセクション */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-extrabold text-gray-600 uppercase tracking-wider">
-            1週間の最適な移動スケジュール
-            {isComputing && <span className="ml-2 text-blue-500 normal-case font-bold animate-pulse">計算中...</span>}
-          </h3>
-          {!isEditing && (
-            <button
-              onClick={() => handleSetIsEditing(true)}
-              className="flex items-center space-x-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer"
-            >
-              <span>編集する</span>
-            </button>
-          )}
-        </div>
-
-        {!boarding ? (
-          <div className="bg-white p-8 rounded-2xl border border-gray-100 text-center shadow-sm">
-            <MapPin className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium text-sm">
-              乗車する駅・停留所を登録すると、
-              <br />
-              1週間の移動スケジュールを計算します。
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {days.map(day => {
-              const plan = computedSchedules[day];
-
-              return (
-                <div key={day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
-                  {/* カードタイトルバー */}
-                  <div className="bg-gray-50/80 px-5 py-3.5 border-b border-gray-100 flex justify-between items-center">
-                    <span className="font-bold text-gray-800 text-sm">{dayFullNames[day]}</span>
-                    {plan ? (
-                      <span className="text-[11px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full">
-                        {plan.minPeriod}限 〜 {plan.maxPeriod}限
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold text-gray-400 bg-gray-150 px-2 py-0.5 rounded-full">
-                        授業なし
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 通学プランコンテンツ */}
-                  <div className="p-5">
-                    {plan ? (
-                      <div className="space-y-5">
-
-                        {/* 授業情報ブロック */}
-                        <div className="flex items-center space-x-3 text-xs bg-gray-50 p-3 rounded-xl border border-gray-100">
-                          <GraduationCap className="h-4.5 w-4.5 text-gray-500" />
-                          <div>
-                            <span className="font-bold text-gray-600">本日の授業時間: </span>
-                            <span className="font-black text-gray-900 ml-1">
-                              {plan.classStart} 〜 {plan.classEnd}
+                  return (
+                    <div
+                      key={day}
+                      className="bg-[#fafafa] rounded-lg shadow-[0px_2px_6px_rgba(0,0,0,0.06)] p-4 space-y-4"
+                    >
+                      <div className="flex items-center gap-8 flex-wrap">
+                        <p className="text-base font-bold text-black shrink-0">{dayFullNames[day]}</p>
+                        {plan && (
+                          <div className="flex items-center gap-4">
+                            <p className="text-xs text-black whitespace-nowrap">
+                              本日の授業時間：<span className="font-bold">{plan.classStart}~{plan.classEnd}</span>
+                            </p>
+                            <span
+                              className="text-white text-[10px] font-bold px-2 py-1 rounded-lg whitespace-nowrap"
+                              style={{ backgroundColor: ACCENT }}
+                            >
+                              {plan.minPeriod}限〜{plan.maxPeriod}限
                             </span>
                           </div>
-                        </div>
-
-                        {/* 行きの通学セクション */}
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-1.5 text-xs font-extrabold text-blue-600">
-                            <MapPin size={14} />
-                            <span>行き (登校・{plan.minPeriod}限開始に合わせる)</span>
-                          </div>
-
-                          {plan.outbound ? (
-                            <div className="bg-blue-50/30 border border-blue-100 rounded-xl p-4 space-y-3">
-                              <div className="flex justify-between items-center">
-                                {/* 乗車情報 */}
-                                <div className="text-left space-y-1">
-                                  <p className="text-xs text-gray-400 font-bold">乗車停留所</p>
-                                  <p className="text-base font-black text-gray-900">{plan.outbound.departureTime}</p>
-                                  <p className="text-[10px] font-bold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded-md inline-block">
-                                    {boarding.name}
-                                  </p>
-                                </div>
-
-                                {/* 通学の矢印 */}
-                                <div className="flex flex-col items-center px-4 flex-1">
-                                  <div className="w-full flex items-center justify-center space-x-1 text-gray-400">
-                                    <div className="h-[1px] bg-gray-200 flex-1"></div>
-                                    <Bus size={14} className="text-blue-500 animate-pulse" />
-                                    <div className="h-[1px] bg-gray-200 flex-1"></div>
-                                  </div>
-                                  <p className="text-[9px] font-bold text-gray-400 mt-1">運行中</p>
-                                </div>
-
-                                {/* 目的地情報 */}
-                                <div className="text-right space-y-1">
-                                  <p className="text-xs text-gray-400 font-bold">大学到着時刻</p>
-                                  <p className="text-base font-black text-gray-900">{plan.outbound.arrivalTime}</p>
-                                  <p className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md inline-block">
-                                    {plan.outbound.stopLabel}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {plan.outbound.isSchoolBus ? (
-                                <div className="flex items-center space-x-1 bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
-                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                                  <span>スクール便 (講義期間中運行)</span>
-                                </div>
-                              ) : plan.outbound.routeName ? (
-                                <div className="flex items-center space-x-1 bg-gray-100 border border-gray-200 text-gray-600 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
-                                  <span>路線: {plan.outbound.routeName}</span>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-xs font-bold">
-                              授業開始時間に間に合う運行バスが見つかりませんでした。
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 帰りの通学セクション */}
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-1.5 text-xs font-extrabold text-indigo-600">
-                            <Clock size={14} />
-                            <span>帰り (下校・{plan.maxPeriod}限終了以降に乗車)</span>
-                          </div>
-
-                          {plan.inbound ? (
-                            <div className="bg-indigo-50/20 border border-indigo-100 rounded-xl p-4 space-y-3">
-                              <div className="flex justify-between items-center">
-                                {/* 乗車停留所 */}
-                                <div className="text-left space-y-1">
-                                  <p className="text-xs text-gray-400 font-bold">大学乗車時刻</p>
-                                  <p className="text-base font-black text-gray-900">{plan.inbound.departureTime}</p>
-                                  <p className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md inline-block">
-                                    {plan.inbound.stopLabel}
-                                  </p>
-                                </div>
-
-                                {/* 通学の矢印 */}
-                                <div className="flex flex-col items-center px-4 flex-1">
-                                  <div className="w-full flex items-center justify-center space-x-1 text-gray-400">
-                                    <div className="h-[1px] bg-gray-200 flex-1"></div>
-                                    <Bus size={14} className="text-indigo-500" />
-                                    <div className="h-[1px] bg-gray-200 flex-1"></div>
-                                  </div>
-                                  <p className="text-[9px] font-bold text-gray-400 mt-1">運行中</p>
-                                </div>
-
-                                {/* 目的地情報 */}
-                                <div className="text-right space-y-1">
-                                  <p className="text-xs text-gray-400 font-bold">最寄り到着時刻</p>
-                                  <p className="text-base font-black text-gray-900">{plan.inbound.arrivalTime}</p>
-                                  <p className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md inline-block">
-                                    {boarding.name}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {plan.inbound.isSchoolBus ? (
-                                <div className="flex items-center space-x-1 bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
-                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                                  <span>スクール便 (講義期間中運行)</span>
-                                </div>
-                              ) : plan.inbound.routeName ? (
-                                <div className="flex items-center space-x-1 bg-gray-100 border border-gray-200 text-gray-600 px-2 py-1 rounded-lg text-[10px] font-bold w-fit">
-                                  <span>路線: {plan.inbound.routeName}</span>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-xs font-bold">
-                              授業終了後に乗車できる運行バスが見つかりませんでした。
-                            </div>
-                          )}
-                        </div>
-
+                        )}
                       </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-6 text-center space-y-2">
-                        <div className="bg-gray-50 p-3 rounded-full text-gray-300">
-                          <Calendar size={24} />
+
+                      <hr className="border-black/10" />
+
+                      {plan ? (
+                        <div className="space-y-4">
+                          <LegSection
+                            label="行き"
+                            leg={plan.outbound}
+                            direction="outbound"
+                            boardingName={boarding.name}
+                            emptyMessage="授業開始時間に間に合う運行バスが見つかりませんでした。"
+                            onOpenDetail={(leg) => openJourneyDetail(day, "outbound", leg, boarding.name)}
+                          />
+                          <LegSection
+                            label="帰り"
+                            leg={plan.inbound}
+                            direction="inbound"
+                            boardingName={boarding.name}
+                            emptyMessage="授業終了後に乗車できる運行バスが見つかりませんでした。"
+                            onOpenDetail={(leg) => openJourneyDetail(day, "inbound", leg, boarding.name)}
+                          />
                         </div>
-                        <div>
-                          <p className="text-xs font-bold text-gray-600">この曜日はお休みです</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">授業が登録されていないため、通学バスの計算はありません。</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      ) : (
+                        <p className="text-xs text-black/50 text-center py-4">
+                          この曜日はお休みです（授業が登録されていません）
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
-      </section>
 
-      <LocationSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onSelect={handleSearchSelect}
-        placeholder="駅名・停留所名で検索"
-        pinned={csvCoverageStops}
-        pinnedLabel="よく使う乗り場"
-      />
-
+        <LocationSearchModal
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+          onSelect={handleSearchSelect}
+          placeholder="駅名・停留所名で検索"
+          pinned={csvCoverageStops}
+          pinnedLabel="よく使う乗り場"
+        />
+      </div>
     </div>
   );
 }

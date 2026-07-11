@@ -1,8 +1,59 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, TrainFront, Bus, MapPin } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
+  X,
+  TrainFront,
+  Bus,
+  MapPin,
+  Plane,
+  Building2,
+  School,
+  Trees,
+  Hospital,
+  Stethoscope,
+  Shield,
+  Landmark,
+  Baby,
+  Library,
+  UtensilsCrossed,
+  Beer,
+  Clapperboard,
+  SquareParking,
+} from "lucide-react";
 import { suggestPlaces, PlaceSuggestion } from "@/lib/transitApi";
+import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
+
+// TransitAPIのdescriptionはOSMタグ由来の自由テキスト（固定の列挙型ではない）。
+// "type"や"type / 運営元"の形式で返ってくるため、"/"より前の種別部分だけを見て
+// 対応するアイコンを引く。ここに無い種別はBus（既定の停留所アイコン）にフォールバックする。
+const POI_ICONS: Record<string, LucideIcon> = {
+  "施設": Building2,
+  school: School,
+  park: Trees,
+  hospital: Hospital,
+  doctors: Stethoscope,
+  police: Shield,
+  townhall: Landmark,
+  kindergarten: Baby,
+  library: Library,
+  restaurant: UtensilsCrossed,
+  pub: Beer,
+  cinema: Clapperboard,
+  parking: SquareParking,
+};
+
+// TransitAPIには"空港"専用のkindが無く、station/placeのどちらでも返ってくるため、
+// 名称に「空港」を含む、またはOSM由来の説明が"aerodrome"の場合を空港として扱う。
+function getPlaceIcon(place: PlaceSuggestion): LucideIcon {
+  const isAirport = place.name.includes("空港") || place.description === "aerodrome";
+  if (isAirport) return Plane;
+  if (place.kind === "station") return TrainFront;
+  const poiType = place.description?.split("/")[0]?.trim();
+  if (poiType && poiType in POI_ICONS) return POI_ICONS[poiType];
+  return Bus;
+}
 
 export interface LocationSearchResult {
   name: string;
@@ -121,28 +172,38 @@ export default function LocationSearchModal({
             <div className="text-center py-8 text-gray-400 text-sm font-bold animate-pulse">検索中...</div>
           ) : results.length > 0 ? (
             <ul>
-              {results.map((place, idx) => (
-                <li key={place.id} className={idx > 0 ? "border-t border-gray-300" : ""}>
-                  <button
-                    onClick={() => onSelect({ name: place.name, endpoint: place.endpoint, kind: place.kind })}
-                    className="w-full text-left px-4 py-3 flex items-center gap-2.5 hover:bg-black/5 active:bg-black/10 transition-colors"
-                  >
-                    {place.kind === "station" ? (
-                      <TrainFront className="w-6 h-6 text-gray-700 shrink-0" />
-                    ) : (
-                      <Bus className="w-6 h-6 text-gray-700 shrink-0" />
-                    )}
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <p className="text-[13px] font-medium text-black truncate">{place.name}</p>
-                      {(place.description || place.nameKana) && (
-                        <p className="text-[11px] text-gray-600 truncate">
-                          {place.description || place.nameKana}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {/* CSV路線網に登録済みの駅・停留所（=独自時刻表データを持つ地点）を先頭に
+                  並べ替える。地点ID(endpoint)での厳密一致のため、表記ゆれの影響を受けない。
+                  Array.prototype.sortは安定ソートなので、それぞれのグループ内の順序は
+                  TransitAPI側のスコア順のまま保たれる。 */}
+              {[...results]
+                .sort((a, b) => {
+                  const aIsCsv = findCsvStopNameByEndpoint(a.endpoint) !== null;
+                  const bIsCsv = findCsvStopNameByEndpoint(b.endpoint) !== null;
+                  return aIsCsv === bIsCsv ? 0 : aIsCsv ? -1 : 1;
+                })
+                .map((place, idx) => {
+                  const isCsvStop = findCsvStopNameByEndpoint(place.endpoint) !== null;
+                  const PlaceIcon = isCsvStop ? MapPin : getPlaceIcon(place);
+                  return (
+                    <li key={place.id} className={idx > 0 ? "border-t border-gray-300" : ""}>
+                      <button
+                        onClick={() => onSelect({ name: place.name, endpoint: place.endpoint, kind: place.kind })}
+                        className="w-full text-left px-4 py-3 flex items-center gap-2.5 hover:bg-black/5 active:bg-black/10 transition-colors"
+                      >
+                        <PlaceIcon className="w-6 h-6 text-gray-700 shrink-0" />
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <p className="text-[13px] font-medium text-black truncate">{place.name}</p>
+                          {(place.description || place.nameKana) && (
+                            <p className="text-[11px] text-gray-600 truncate">
+                              {place.description || place.nameKana}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
             </ul>
           ) : (
             <div className="text-center py-10 px-4">

@@ -3,6 +3,39 @@
 
 const TRANSIT_API_BASE = "https://api.transit.ls8h.com";
 
+// ハイブリッド乗換候補（拡張路線の停留所ごと）を常にすべて計算する都合上、planJourneyは
+// 1回のスケジュール計算で100件超規模に並列で呼ばれ得る。無制限に並列実行するとサーバー
+// 側の負荷等により"Failed to fetch"が頻発する一方、絞りすぎると計算完了までの待ち時間が
+// 大幅に伸びる（6並列では数十秒〜1分以上かかることを確認）。両者のバランスを取り、
+// 同時実行数を絞るための簡易セマフォを導入する。上限を超えた分は先着順にキューイングされ、
+// 空きが出次第実行される。
+const MAX_CONCURRENT_PLAN_REQUESTS = 12;
+
+class Semaphore {
+  private available: number;
+  private readonly queue: (() => void)[] = [];
+
+  constructor(concurrency: number) {
+    this.available = concurrency;
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.available <= 0) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.available--;
+    return () => this.release();
+  }
+
+  private release() {
+    this.available++;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+const planJourneySemaphore = new Semaphore(MAX_CONCURRENT_PLAN_REQUESTS);
+
 // 学校専用のスクール便CSVには存在しないため、TransitAPI側では
 // 大学近隣のOSM地点（北海道情報大学）を固定の目的地として使う。
 export const JOHODAI = {
@@ -31,7 +64,10 @@ export async function suggestPlaces(query: string, limit = 10): Promise<PlaceSug
     const data = await res.json();
     return Array.isArray(data.places) ? data.places : [];
   } catch (e) {
-    console.error("TransitAPI suggestPlaces failed:", e);
+    // 呼び出し側は空配列を正しく扱える設計であり、ネットワーク不調は起こり得る想定内の
+    // 失敗のためconsole.warnに留める。console.errorはNext.jsの開発時オーバーレイに
+    // ハンドリング済みの失敗まで致命的エラーとして表示させてしまうため使わない。
+    console.warn("TransitAPI suggestPlaces failed:", e);
     return [];
   }
 }
@@ -70,6 +106,7 @@ export type PlanResult =
   | { ok: false; error: string };
 
 export async function planJourney(params: PlanParams): Promise<PlanResult> {
+  const release = await planJourneySemaphore.acquire();
   try {
     const url = new URL("/api/v1/plan", TRANSIT_API_BASE);
     url.searchParams.set("from", params.from);
@@ -91,8 +128,14 @@ export async function planJourney(params: PlanParams): Promise<PlanResult> {
 
     return { ok: true, journeys: Array.isArray(data.journeys) ? data.journeys : [] };
   } catch (e) {
-    console.error("TransitAPI planJourney failed:", e);
+    // journeyPlanner側は複数候補を並列に試し、失敗した候補は単に除外する設計のため、
+    // 個々の失敗はアプリのクラッシュではない想定内の事象。console.errorはNext.jsの
+    // 開発時オーバーレイにハンドリング済みの失敗まで致命的エラーとして表示させてしまう
+    // ため、ここではconsole.warnに留める。
+    console.warn("TransitAPI planJourney failed:", e);
     return { ok: false, error: "経路検索に失敗しました" };
+  } finally {
+    release();
   }
 }
 

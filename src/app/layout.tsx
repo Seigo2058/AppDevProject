@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className="h-full antialiased">
-      <body className={`${inter.className} min-h-full flex flex-col pb-16`}>
+      <body className={`${inter.className} h-full flex flex-col`}>
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {children}
         </main>

@@ -7,13 +7,23 @@
 // 「厚別駅」(JR)と「厚別中央2条6丁目」(バス)のように、名前は似ていても実際には
 // 離れた別地点のものは正規化後も別の文字列になるため誤って統合されない。
 export function canonicalStopName(name: string): string {
-  return name
+  const stripped = name
     .replace(/\([^)]*\)/g, "")
     .replace(/(北口|南口|東口|西口)$/, "")
     .trim();
+
+  // 表記ゆれ吸収辞書: TransitAPI/ユーザー入力の通称 → CSV上の正式名
+  const ALIASES: Record<string, string> = {
+    "新さっぽろ": "新札幌駅",
+    "新さっぽろ駅": "新札幌駅",
+    "新札幌": "新札幌駅",
+    "おおあさ": "大麻駅",
+    "大麻": "大麻駅",
+  };
+  return ALIASES[stripped] ?? stripped;
 }
 
-export const CAMPUS_CANONICAL_STOPS = new Set(["情報大学前", "eDCタワー前"]);
+export const CAMPUS_CANONICAL_STOPS = new Set(["情報大学前", "eDCタワー前", "EDCタワー前"]);
 
 export interface StopEndpoint {
   id: string;
@@ -42,6 +52,9 @@ const STOP_COORDINATES: Record<string, StopEndpoint | null> = {
   "森林公園駅": { id: "geo:43.056462,141.481287", name: "森林公園駅" },
   "白石駅": { id: "geo:43.054852,141.413818", name: "白石" },
   "苗穂駅": { id: "geo:43.068532,141.373756", name: "苗穂" },
+  "情報大学前": { id: "geo:43.077892,141.536019", name: "北海道情報大学" },
+  "eDCタワー前": { id: "geo:43.077892,141.536019", name: "北海道情報大学" },
+  "EDCタワー前": { id: "geo:43.077892,141.536019", name: "北海道情報大学" },
 };
 
 export function resolveStopEndpoint(canonicalName: string): StopEndpoint | null {

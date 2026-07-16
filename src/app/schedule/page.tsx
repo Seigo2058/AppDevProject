@@ -17,7 +17,7 @@ import {
   setComputedScheduleCache,
   formatRouteLabel,
 } from "@/lib/schedule";
-import { getCsvCoverageStops } from "@/lib/tripGraph";
+import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
 import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
 
@@ -157,6 +157,8 @@ export default function SchedulePage() {
 
   // 自前CSVで直通/1回の乗換により大学へ到達できる停留所（検索の「よく使う乗り場」候補）
   const [csvCoverageStops, setCsvCoverageStops] = useState<string[]>([]);
+  // 停留所名 -> 事業者名（"よく使う乗り場"に駅名の下へ小さく表示する）
+  const [stopAgencyNames, setStopAgencyNames] = useState<Record<string, string>>({});
 
   // ユーザー設定
   const [boarding, setBoarding] = useState<BoardingSelection | null>(null);
@@ -246,6 +248,7 @@ export default function SchedulePage() {
     loadData();
     restoreSettings();
     getCsvCoverageStops().then(setCsvCoverageStops);
+    getStopAgencyNames().then((map) => setStopAgencyNames(Object.fromEntries(map)));
   }, []);
 
   // 乗車停留所・時間割が変わった時だけ1週間分のプランをTransitAPI/CSVから再計算する。
@@ -533,6 +536,7 @@ export default function SchedulePage() {
           placeholder="駅名・停留所名で検索"
           pinned={csvCoverageStops}
           pinnedLabel="よく使う乗り場"
+          pinnedAgencyNames={stopAgencyNames}
         />
       </div>
     </div>

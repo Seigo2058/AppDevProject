@@ -452,10 +452,19 @@ export async function searchRoutes(
     }
   }
 
+  // 時間割(journeyPlanner.ts)と同じ「CSV優先」方針: 目的の時間帯に間に合うCSV単独経路が
+  // 既に見つかっている場合、TransitAPI単独検索・ハイブリッド検索(いずれも通信コストが高く、
+  // 乗換候補ごとに並列でTransitAPIへ問い合わせる)は行わない。これにより通信量を削減しつつ、
+  // 大量のハイブリッド候補で直通CSV経路(例: 新29)が上位5件から押し出される問題も防ぐ。
+  const hasUsableCsvResult =
+    timeType === "departure"
+      ? journeys.some((j) => timeToMinutes(j.departureTime) >= targetMins)
+      : journeys.some((j) => timeToMinutes(j.arrivalTime) <= targetMins);
+
   // 2. TransitAPI単独検索 (両方がTransitAPI Endpointに解決できる場合)
   const fromEndpoint = resolveOriginEndpoint(from);
   const toEndpoint = resolveOriginEndpoint(to);
-  if (fromEndpoint && toEndpoint) {
+  if (!hasUsableCsvResult && fromEndpoint && toEndpoint) {
     try {
       const apiResult = await planJourney({
         from: fromEndpoint.id,
@@ -468,7 +477,14 @@ export async function searchRoutes(
       });
 
       if (apiResult.ok && apiResult.journeys.length > 0) {
-        const results = apiResult.journeys.map((j) => {
+        // TransitAPIは公共交通機関の乗換がない「全区間徒歩」の案内も1候補として返すことがある。
+        // これは出発待ちが無い分、他の実際の地下鉄・JR便より出発時刻が早くなりがちで、
+        // transitAPIのlegsにtransit区間が1つも無いため`routeName`のフォールバック値
+        // "公共交通機関"がそのまま付き、あたかも実在の公共交通機関の経路であるかのように
+        // 誤表示されてしまう。経路検索は公共交通機関の経路を提示する機能のため、
+        // 徒歩のみの案内はここでは除外する。
+        const transitJourneys = apiResult.journeys.filter((j) => j.legs.some((l) => l.kind === "transit"));
+        const results = transitJourneys.map((j) => {
           const depTime = formatClock(j.departureSecs);
           const arrTime = formatClock(j.arrivalSecs);
           const duration = Math.round(j.durationSecs / 60);
@@ -499,7 +515,7 @@ export async function searchRoutes(
   const isFromCampus = CAMPUS_CANONICAL_STOPS.has(canonicalStopName(from.name));
   const isToCampus = CAMPUS_CANONICAL_STOPS.has(canonicalStopName(to.name));
 
-  if ((isFromCampus || isToCampus) && !(isFromCampus && isToCampus)) {
+  if (!hasUsableCsvResult && (isFromCampus || isToCampus) && !(isFromCampus && isToCampus)) {
     const tasks: Promise<void>[] = [];
     const hybridJourneys: SearchResultJourney[] = [];
 

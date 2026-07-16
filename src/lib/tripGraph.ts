@@ -308,3 +308,28 @@ export async function getCsvCoverageStops(dayType = "平日"): Promise<string[]>
 
   return Array.from(withTransfer);
 }
+
+// 停留所名 -> その停留所を経由する事業者名（例: "JR北海道", "JR北海道バス"）。
+// 同じ停留所を複数事業者の路線が経由する場合は"・"で連結する。
+// 「よく使う乗り場」欄で駅名の下に交通機関事業者名を表示するために使う。
+export async function getStopAgencyNames(dayType = "平日"): Promise<Map<string, string>> {
+  const [runs, timetables] = await Promise.all([loadRouteRuns(dayType), fetchTimetableList()]);
+  const agencyByRouteId = new Map(timetables.map((t) => [t.route_id, t.agencyName]));
+
+  const agenciesByStop = new Map<string, Set<string>>();
+  for (const run of runs) {
+    const agencyName = agencyByRouteId.get(run.routeId);
+    if (!agencyName) continue;
+    for (const stop of run.stops) {
+      const set = agenciesByStop.get(stop) ?? new Set<string>();
+      set.add(agencyName);
+      agenciesByStop.set(stop, set);
+    }
+  }
+
+  const result = new Map<string, string>();
+  for (const [stop, agencies] of agenciesByStop) {
+    result.set(stop, Array.from(agencies).join("・"));
+  }
+  return result;
+}

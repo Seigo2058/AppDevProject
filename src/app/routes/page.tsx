@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
-import { getCsvCoverageStops } from "@/lib/tripGraph";
+import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
 import { findCsvStopNameByEndpoint, canonicalStopName } from "@/lib/stopRegistry";
 import {
   searchRoutes,
@@ -79,6 +79,8 @@ export default function RoutesPage() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchingField, setSearchingField] = useState<"departure" | "destination" | null>(null);
   const [csvCoverageStops, setCsvCoverageStops] = useState<string[]>([]);
+  // 停留所名 -> 事業者名（"よく使う乗り場"に駅名の下へ小さく表示する）
+  const [stopAgencyNames, setStopAgencyNames] = useState<Record<string, string>>({});
 
   // Delay info modal state
   const [isDelayModalOpen, setIsDelayModalOpen] = useState(false);
@@ -123,6 +125,7 @@ export default function RoutesPage() {
       ];
       setCsvCoverageStops(merged);
     });
+    getStopAgencyNames().then((map) => setStopAgencyNames(Object.fromEntries(map)));
   }, []);
 
   // Fetch the next available trip for each registered route dynamically
@@ -885,6 +888,7 @@ export default function RoutesPage() {
         placeholder={searchingField === "departure" ? "出発地を検索（例：札幌）" : "目的地を検索（例：情報大学前）"}
         pinned={csvCoverageStops}
         pinnedLabel="よく使う乗り場"
+        pinnedAgencyNames={stopAgencyNames}
       />
 
       {/* Modal 2: Delay/Operation Status Modal */}

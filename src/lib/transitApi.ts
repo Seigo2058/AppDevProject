@@ -50,6 +50,16 @@ export interface PlaceSuggestion {
   kind: "station" | "stop" | "place" | "address";
   description?: string;
   nameKana?: string;
+  feedName?: string;
+}
+
+// "transit:query-landmark:" と "osm:cluster:" は、同名の複数駅・停留所を1点に束ねた
+// 集約エントリ（例: "札幌 4地点"）で、特定の事業者・路線の停留所ではない。
+// 検索候補としては曖昧なだけでなく、この集約地点の座標をそのままplanJourneyに渡すと
+// 実在する地下鉄・JRがあるのに全区間徒歩の案内が返ってくることがある（generalRouteSearch.ts
+// で対処済みの不具合の発生源のひとつ）。事業者・路線が特定できる個別エントリのみを返す。
+function isAggregatedClusterPlace(place: PlaceSuggestion): boolean {
+  return place.id.startsWith("transit:query-landmark:") || place.id.startsWith("osm:cluster:");
 }
 
 export async function suggestPlaces(query: string, limit = 10): Promise<PlaceSuggestion[]> {
@@ -62,7 +72,8 @@ export async function suggestPlaces(query: string, limit = 10): Promise<PlaceSug
     const res = await fetch(url.toString());
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data.places) ? data.places : [];
+    const places: PlaceSuggestion[] = Array.isArray(data.places) ? data.places : [];
+    return places.filter((p) => !isAggregatedClusterPlace(p));
   } catch (e) {
     // 呼び出し側は空配列を正しく扱える設計であり、ネットワーク不調は起こり得る想定内の
     // 失敗のためconsole.warnに留める。console.errorはNext.jsの開発時オーバーレイに

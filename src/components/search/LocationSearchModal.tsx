@@ -46,6 +46,34 @@ const POI_ICONS: Record<string, LucideIcon> = {
 
 // TransitAPIには"空港"専用のkindが無く、station/placeのどちらでも返ってくるため、
 // 名称に「空港」を含む、またはOSM由来の説明が"aerodrome"の場合を空港として扱う。
+// TransitAPIは同じ駅でも事業者・路線ごとに別エントリを返す（JRの駅と地下鉄駅、バス停等）。
+// 名前だけでは区別が付かず、以前は候補が全て同じ表記に見えてしまっていたため、
+// 事業者情報(feedName、またはOSM由来ならdescriptionの"駅 / 事業者名"表記)を
+// 元に「JR札幌駅」「バス停 大麻駅」のような表示用ラベルを組み立てる。
+// なお、これは表示専用でありPlaceSuggestion.name自体は変更しない
+// （onSelectで渡す実際の地点名は既存の駅名表記のまま保つ必要があるため）。
+function getPlaceDisplayLabel(place: PlaceSuggestion): string {
+  const needsStationSuffix = place.kind === "station" && !place.name.endsWith("駅");
+  const displayName = needsStationSuffix ? `${place.name}駅` : place.name;
+
+  if (place.kind === "stop") {
+    return `バス停 ${displayName}`;
+  }
+  if (place.feedName) {
+    if (place.feedName.startsWith("JR")) return `JR${displayName}`;
+    if (place.feedName.includes("地下鉄")) return `地下鉄${displayName}`;
+    // 私鉄・他事業者: 路線名等の詳細（括弧書き）を省いた事業者名のみを前置する
+    const operatorLabel = place.feedName.split(/[\s（(]/)[0];
+    return `${operatorLabel} ${displayName}`;
+  }
+  // OSM由来のエントリは事業者情報がdescriptionに"駅 / 事業者名"の形で入っていることがある
+  const osmOperatorMatch = place.description?.match(/^駅\s*\/\s*(.+)/);
+  if (osmOperatorMatch) {
+    return `${osmOperatorMatch[1]} ${displayName}`;
+  }
+  return displayName;
+}
+
 function getPlaceIcon(place: PlaceSuggestion): LucideIcon {
   const isAirport = place.name.includes("空港") || place.description === "aerodrome";
   if (isAirport) return Plane;
@@ -69,6 +97,7 @@ interface LocationSearchModalProps {
   placeholder?: string;
   pinned?: string[];
   pinnedLabel?: string;
+  pinnedAgencyNames?: Record<string, string>;
 }
 
 export default function LocationSearchModal({
@@ -79,6 +108,7 @@ export default function LocationSearchModal({
   placeholder = "駅名・停留所名で検索",
   pinned = [],
   pinnedLabel = "よく使う乗り場",
+  pinnedAgencyNames = {},
 }: LocationSearchModalProps) {
   const [keyword, setKeyword] = useState(initialValue);
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
@@ -154,7 +184,12 @@ export default function LocationSearchModal({
                       className="w-full text-left px-4 py-3 flex items-center gap-2.5 hover:bg-black/5 active:bg-black/10 transition-colors"
                     >
                       <MapPin className="w-6 h-6 text-gray-500 shrink-0" />
-                      <span className="text-[13px] font-medium text-black">{name}</span>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-[13px] font-medium text-black truncate">{name}</span>
+                        {pinnedAgencyNames[name] && (
+                          <span className="text-[10px] text-gray-400 truncate">{pinnedAgencyNames[name]}</span>
+                        )}
+                      </div>
                     </button>
                   </li>
                 ))}

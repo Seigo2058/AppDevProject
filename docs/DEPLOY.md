@@ -26,7 +26,6 @@
    - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
    - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
    - `NEXT_PUBLIC_FIREBASE_APP_ID`
-   - `PUPPETEER_SKIP_DOWNLOAD` = `1`（開発用の `puppeteer` が Chromium をダウンロードしてビルドが遅くなるのを防ぐ）
 5. **Deploy** を押す。数分で `https://<プロジェクト名>.vercel.app` が発行される
 
 以降は `main` に push（PR をマージ）するたびに自動で本番デプロイされる。

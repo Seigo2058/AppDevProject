@@ -32,6 +32,8 @@ yarn-error.log*
 
 # 環境変数ファイル（必要に応じてコミットに含めることができます）
 .env*
+# ただし設定値のひな形（値は空）はコミットする
+!.env.example
 
 # vercel
 .vercel

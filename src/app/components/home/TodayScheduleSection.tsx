@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bus, GraduationCap } from "lucide-react";
+import { BusFront, GraduationCap, LucideIcon } from "lucide-react";
 import {
   ClassPeriod,
   BoardingSelection,
@@ -14,8 +14,20 @@ import {
   getComputedScheduleCache,
   setComputedScheduleCache,
   formatRouteLabel,
+  timeToMinutes,
 } from "@/lib/schedule";
 import RouteLegCard from "./RouteLegCard";
+
+// 当日の最終便の出発からこの時間が経過したら、翌営業日の「行き」に表示を繰り越す。
+const ROLLOVER_MINUTES = 120;
+
+interface Leg {
+  label: string;
+  icon: LucideIcon;
+  placeName: string;
+  agencyName: string;
+  departureTime: string;
+}
 
 function loadBoardingSelection(): BoardingSelection | null {
   if (typeof window === "undefined") return null;
@@ -34,7 +46,51 @@ function loadBoardingSelection(): BoardingSelection | null {
   }
 }
 
-export default function TodayScheduleSection() {
+// 起点日から先の平日を、日付のオフセット付きで最大5日分（＝月〜金で重複なし）並べる。
+function upcomingSchoolDays(from: Date): { dayStr: string; offset: number }[] {
+  const result: { dayStr: string; offset: number }[] = [];
+  for (let offset = 0; offset < 7 && result.length < days.length; offset++) {
+    const date = new Date(from);
+    date.setDate(date.getDate() + offset);
+    const dayIndex = date.getDay();
+    if (dayIndex === 0 || dayIndex === 6) continue;
+    result.push({ dayStr: days[dayIndex - 1], offset });
+  }
+  return result;
+}
+
+// DayPlanを出発時刻の早い順（行き→帰り）のカード表示用データに変換する。
+function buildLegs(plan: DayPlan, boardingName: string): Leg[] {
+  return [
+    plan.outbound && {
+      label: "行き",
+      icon: BusFront,
+      placeName: boardingName,
+      agencyName: plan.outbound.isSchoolBus
+        ? "スクール便"
+        : formatRouteLabel(plan.outbound.routeName || "路線バス"),
+      departureTime: plan.outbound.departureTime,
+    },
+    plan.inbound && {
+      label: "帰り",
+      icon: GraduationCap,
+      placeName: plan.inbound.stopLabel,
+      agencyName: plan.inbound.isSchoolBus
+        ? "スクール便"
+        : formatRouteLabel(plan.inbound.routeName || "路線バス"),
+      departureTime: plan.inbound.departureTime,
+    },
+  ]
+    .filter((leg) => !!leg)
+    .sort((a, b) => timeToMinutes(a.departureTime) - timeToMinutes(b.departureTime));
+}
+
+interface TodayScheduleSectionProps {
+  /** セクション見出し。ホームは「My時間割ルート」、時間割トップは「今日のスケジュール」。 */
+  title?: string;
+}
+
+export default function TodayScheduleSection({ title = "My時間割ルート" }: TodayScheduleSectionProps) {
   const [scheduleData, setScheduleData] = useState<{
     periods: ClassPeriod[];
   } | null>(null);
@@ -52,9 +108,24 @@ export default function TodayScheduleSection() {
     }
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
+  // 当日ぶんと繰り越し先ぶんを保持するため、曜日をキーにした計算結果のマップで持つ。
+  const [plans, setPlans] = useState<Record<string, DayPlan | null>>({});
   const [isComputing, setIsComputing] = useState(false);
   const [today] = useState(() => new Date());
+  // 表示対象は時刻の経過で 行き→帰り→翌日の行き と切り替わるため、定期的に現在時刻を更新する。
+  // カード本体はデータ取得後（＝クライアント側）にしか描画されないため、SSRとの不一致は起きない。
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  });
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date();
+      setNowMinutes(d.getHours() * 60 + d.getMinutes());
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -85,68 +156,103 @@ export default function TodayScheduleSection() {
   }, []);
 
   useEffect(() => {
+    if (isLoading || !scheduleData || !boarding) return;
     let cancelled = false;
-    async function compute() {
-      if (isLoading || !scheduleData || !boarding) return;
 
-      const dayIndex = today.getDay();
-      if (dayIndex === 0 || dayIndex === 6) {
-        if (!cancelled) setDayPlan(null);
-        return;
-      }
-
-      const dayStr = days[dayIndex - 1];
-
-      const cached = getComputedScheduleCache(boarding, schedule, [dayStr]);
-      if (cached) {
-        if (!cancelled) setDayPlan(cached[dayStr]);
-        return;
-      }
-
+    // 当日ぶんと、繰り越し先となる翌営業日ぶんの2日分を先頭から順に確定させる。
+    // 当日ぶんが出た時点でスピナーを解除し、繰り越し先は裏で計算を続けることで
+    // 初回表示が遅くならないようにする。
+    async function resolvePlans() {
       setIsComputing(true);
-      const plan = await getDaySchedule(dayStr, schedule, scheduleData.periods, boarding);
-      if (!cancelled) {
-        setDayPlan(plan);
-        setIsComputing(false);
-        setComputedScheduleCache(boarding, schedule, { [dayStr]: plan });
+      let resolved = 0;
+
+      for (const { dayStr } of upcomingSchoolDays(today)) {
+        let plan: DayPlan | null;
+        const cached = getComputedScheduleCache(boarding!, schedule, [dayStr]);
+        if (cached) {
+          plan = cached[dayStr];
+        } else {
+          plan = await getDaySchedule(dayStr, schedule, scheduleData!.periods, boarding!);
+          if (cancelled) return;
+          setComputedScheduleCache(boarding!, schedule, { [dayStr]: plan });
+        }
+        if (cancelled) return;
+
+        setPlans((prev) => ({ ...prev, [dayStr]: plan }));
+        if (plan) {
+          resolved++;
+          setIsComputing(false);
+          if (resolved >= 2) return;
+        }
       }
+
+      if (!cancelled) setIsComputing(false);
     }
-    compute();
+
+    resolvePlans();
     return () => {
       cancelled = true;
     };
   }, [isLoading, scheduleData, boarding, schedule, today]);
 
-  const card = renderCard();
+  // 表示すべき「次に乗る便」を選ぶ。undefined は計算待ち、null は該当便なしを表す。
+  function selectTarget() {
+    if (!boarding) return null;
+
+    for (const { dayStr, offset } of upcomingSchoolDays(today)) {
+      if (!(dayStr in plans)) return undefined;
+
+      const plan = plans[dayStr];
+      if (!plan) continue;
+
+      const legs = buildLegs(plan, boarding.name);
+      if (legs.length === 0) continue;
+
+      if (offset > 0) {
+        // 翌営業日以降はその日の最初の便（＝行き）を表示する。
+        return { dayStr, offset, plan, leg: legs[0] };
+      }
+
+      const lastDeparture = timeToMinutes(legs[legs.length - 1].departureTime);
+      if (lastDeparture !== -1 && nowMinutes >= lastDeparture + ROLLOVER_MINUTES) {
+        continue;
+      }
+
+      // まだ出発していない最初の便。最終便の出発直後（繰り越しまでの猶予中）は最終便を出し続ける。
+      const upcoming = legs.find((leg) => {
+        const departure = timeToMinutes(leg.departureTime);
+        return departure !== -1 && departure >= nowMinutes;
+      });
+      return { dayStr, offset, plan, leg: upcoming ?? legs[legs.length - 1] };
+    }
+
+    return null;
+  }
 
   return (
     <section className="space-y-4">
-      <h2 className="text-base font-bold text-black">My時間割ルート</h2>
-      {card}
+      <h2 className="text-base font-bold text-black">{title}</h2>
+      {renderCard()}
     </section>
   );
 
   function renderCard() {
-    if (isLoading || !scheduleData || isComputing) {
-      return (
-        <div className="bg-[#fafafa] shadow-sm rounded-lg p-4 flex items-center justify-center min-h-[100px]">
-          <div className="animate-spin rounded-full h-6 w-6 border-2 border-[#aecb72] border-t-transparent" />
-        </div>
-      );
-    }
+    const target = selectTarget();
 
-    const dayIndex = today.getDay();
-    if (dayIndex === 0 || dayIndex === 6) {
+    // boardingやscheduleはlocalStorage由来のためサーバーでは必ず空になる。
+    // isLoadingはサーバー・クライアントとも初期値trueなので、この分岐を先頭に置くことで
+    // 初回レンダーの出力が必ず一致し、hydrationの不一致を避けられる。
+    if (isLoading || !scheduleData || isComputing || target === undefined) {
       return (
-        <div className="bg-[#fafafa] shadow-sm rounded-lg p-4">
-          <p className="text-sm font-bold text-gray-600">本日は休日のため、通学スケジュールはありません。</p>
+        <div className="bg-[#fafafa] rounded-lg p-4 flex items-center justify-center min-h-[100px]">
+          <div className="animate-spin rounded-full h-6 w-6 border-2 border-[#a0e25e] border-t-transparent" />
         </div>
       );
     }
 
     if (!boarding) {
       return (
-        <div className="bg-[#fafafa] shadow-sm rounded-lg p-4">
+        <div className="bg-[#fafafa] rounded-lg p-4">
           <p className="text-sm font-bold text-gray-600">
             「時間割」ページで乗車する駅・停留所を登録してください。
           </p>
@@ -154,27 +260,32 @@ export default function TodayScheduleSection() {
       );
     }
 
-    const dayStr = days[dayIndex - 1];
-
-    if (!dayPlan) {
+    if (!target) {
       return (
-        <div className="bg-[#fafafa] shadow-sm rounded-lg p-4">
-          <p className="text-sm font-bold text-gray-600">本日の時間割が登録されていません。</p>
+        <div className="bg-[#fafafa] rounded-lg p-4">
+          <p className="text-sm font-bold text-gray-600">表示できる通学ルートがありません。</p>
         </div>
       );
     }
 
-    const periodBadge = dayPlan.minPeriod === dayPlan.maxPeriod ? `${dayPlan.minPeriod}限` : `${dayPlan.minPeriod}限〜${dayPlan.maxPeriod}限`;
+    const { dayStr, offset, plan, leg } = target;
+    const periodBadge =
+      plan.minPeriod === plan.maxPeriod
+        ? `${plan.minPeriod}限`
+        : `${plan.minPeriod}限〜${plan.maxPeriod}限`;
 
     return (
-      <div className="bg-[#fafafa] shadow-sm rounded-lg p-4 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="bg-[#fafafa] rounded-lg p-4 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4">
           <p className="text-base font-bold text-black whitespace-nowrap">{dayFullNames[dayStr]}</p>
-          <div className="flex items-center gap-4 text-xs text-black flex-wrap">
-            <span>
-              本日の授業時間：<span className="font-bold">{dayPlan.classStart}~{dayPlan.classEnd}</span>
+          <div className="flex items-center justify-end gap-4 flex-wrap">
+            <span className="text-xs text-black whitespace-nowrap">
+              {offset === 0 ? "本日の授業時間：" : "授業時間："}
+              <span className="font-bold">
+                {plan.classStart}~{plan.classEnd}
+              </span>
             </span>
-            <span className="bg-[#aecb72] text-white text-[10px] font-bold rounded-lg px-2 py-1 whitespace-nowrap">
+            <span className="rounded-lg border border-[#a0e25e] p-1 text-[10px] font-bold text-black whitespace-nowrap">
               {periodBadge}
             </span>
           </div>
@@ -182,32 +293,14 @@ export default function TodayScheduleSection() {
 
         <div className="border-t border-gray-200" />
 
-        <div className="flex flex-col gap-4">
-          {dayPlan.outbound && (
-            <RouteLegCard
-              label="行き"
-              methodLabel={dayPlan.outbound.isSchoolBus ? "スクール便" : formatRouteLabel(dayPlan.outbound.routeName || "路線バス")}
-              departureTime={dayPlan.outbound.departureTime}
-              departureStop={boarding.name}
-              departureIcon={Bus}
-              arrivalTime={dayPlan.outbound.arrivalTime}
-              arrivalStop={dayPlan.outbound.stopLabel}
-              arrivalIcon={GraduationCap}
-            />
-          )}
-          {dayPlan.inbound && (
-            <RouteLegCard
-              label="帰り"
-              methodLabel={dayPlan.inbound.isSchoolBus ? "スクール便" : formatRouteLabel(dayPlan.inbound.routeName || "路線バス")}
-              departureTime={dayPlan.inbound.departureTime}
-              departureStop={dayPlan.inbound.stopLabel}
-              departureIcon={GraduationCap}
-              arrivalTime={dayPlan.inbound.arrivalTime}
-              arrivalStop={boarding.name}
-              arrivalIcon={Bus}
-            />
-          )}
-        </div>
+        <RouteLegCard
+          label={leg.label}
+          icon={leg.icon}
+          placeName={leg.placeName}
+          agencyName={leg.agencyName}
+          departureTime={leg.departureTime}
+          dayOffset={offset}
+        />
       </div>
     );
   }

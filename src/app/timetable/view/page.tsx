@@ -1,22 +1,34 @@
 "use client";
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, Info } from 'lucide-react';
-import { 
-  getTimetableInfoById, 
-  getTimetableInfo, 
-  fetchTimetableData, 
+import { ChevronLeft } from 'lucide-react';
+import {
+  getTimetableInfoById,
+  getTimetableInfo,
+  fetchTimetableData,
   getRouteStopsById,
   TimetableInfo,
   saveFavoriteRoute,
-  getFavoriteRoutes,
+  isFavoriteRoute,
   removeFavoriteRoute
 } from '@/lib/timetableData';
+import DetailActionBar from '@/components/DetailActionBar';
+
+// 発車時刻は1行あたり5件で折り返す（Figmaの時刻表レイアウトに準拠）
+const TIMES_PER_ROW = 5;
+
+function chunkMinutes(minutes: string[]): string[][] {
+  const rows: string[][] = [];
+  for (let i = 0; i < minutes.length; i += TIMES_PER_ROW) {
+    rows.push(minutes.slice(i, i + TIMES_PER_ROW));
+  }
+  return rows;
+}
 
 function TimetableViewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const paramRouteId = searchParams.get('route_id');
   const paramRouteName = searchParams.get('route_name');
   const paramDirection = searchParams.get('direction');
@@ -27,10 +39,12 @@ function TimetableViewContent() {
   // 時刻を時(hour)ごとにグループ化したデータ
   const [scheduleByHour, setScheduleByHour] = useState<{ hour: number, minutes: string[] }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isEdgeStop, setIsEdgeStop] = useState(false);
-  
+  // 路線図バーの両端に表示する始発・終点
+  const [originStop, setOriginStop] = useState('');
+  const [terminalStop, setTerminalStop] = useState('');
+
   const [isFavorite, setIsFavorite] = useState(false);
-  
+
   // 他の曜日の情報を保持（タブ切り替え用）
   const [availableDays, setAvailableDays] = useState<{ dayType: string, routeId: string }[]>([]);
 
@@ -48,24 +62,20 @@ function TimetableViewContent() {
       if (info) {
         setCurrentInfo(info);
         const data = await fetchTimetableData(info.csvFileName);
-        
-        // 停留所が路線の端（最初または最後）かどうかを判定
+
         const stops = await getRouteStopsById(info.route_id);
-        if (stops.length > 0) {
-          const isFirst = stops[0] === paramStopName;
-          const isLast = stops[stops.length - 1] === paramStopName;
-          setIsEdgeStop(isFirst || isLast);
-        }
+        setOriginStop(stops.length > 0 ? stops[0] : '');
+        setTerminalStop(stops.length > 0 ? stops[stops.length - 1] : '');
 
         let colIndex = -1;
         if (data.length > 0) {
           const headers = data[0];
           colIndex = headers.findIndex(h => h.includes(paramStopName));
-          if (colIndex === -1) colIndex = 0; 
+          if (colIndex === -1) colIndex = 0;
         }
 
         const timesObj: Record<number, string[]> = {};
-        
+
         if (colIndex !== -1 && data.length > 1) {
           for (let i = 1; i < data.length; i++) {
             const timeStr = data[i][colIndex];
@@ -80,7 +90,7 @@ function TimetableViewContent() {
             }
           }
         }
-        
+
         // オブジェクトを配列に変換してソート
         const grouped = Object.keys(timesObj)
           .map(k => parseInt(k, 10))
@@ -89,23 +99,22 @@ function TimetableViewContent() {
             hour,
             minutes: timesObj[hour].sort()
           }));
-          
+
         setScheduleByHour(grouped);
-        
-        // お気に入り状態の確認
-        const favs = getFavoriteRoutes();
-        setIsFavorite(favs.some(f => f.routeId === info!.route_id && f.stopName === paramStopName));
+
+        // お気に入り状態の確認（曜日は区別しないので、同じ路線・方面なら登録済み扱い）
+        setIsFavorite(await isFavoriteRoute(info.route_id, paramStopName));
 
         // タブ用に同じ路線・方面の他曜日の情報を探す
         const p1 = await getTimetableInfo(info.routeName, info.direction, '平日');
         const p2 = await getTimetableInfo(info.routeName, info.direction, '土日・祝');
-        
+
         const days = [];
         if (p1) days.push({ dayType: p1.dayType, routeId: p1.route_id });
         if (p2) days.push({ dayType: p2.dayType, routeId: p2.route_id });
-        
+
         // 表示順を「平日」「土日・祝」の順にする
-        days.sort((a, b) => a.dayType === '平日' ? -1 : 1);
+        days.sort((a) => a.dayType === '平日' ? -1 : 1);
         setAvailableDays(days);
       } else {
         setCurrentInfo(null);
@@ -115,15 +124,15 @@ function TimetableViewContent() {
     loadData();
   }, [paramRouteId, paramRouteName, paramDirection, paramDayType, paramStopName]);
 
-  const toggleFavorite = () => {
+  // 登録は曜日を区別しない。平日タブ・土日タブのどちらから押しても同じ1件を登録／解除する。
+  const toggleFavorite = async () => {
     if (!currentInfo) return;
     if (isFavorite) {
-      removeFavoriteRoute(currentInfo.route_id, paramStopName);
+      await removeFavoriteRoute(currentInfo.route_id, paramStopName);
       setIsFavorite(false);
     } else {
-      saveFavoriteRoute(currentInfo.route_id, paramStopName);
+      await saveFavoriteRoute(currentInfo.route_id, paramStopName);
       setIsFavorite(true);
-      // alertは控えめに
     }
   };
 
@@ -131,79 +140,94 @@ function TimetableViewContent() {
     router.replace(`/timetable/view?route_id=${routeId}&stop_name=${encodeURIComponent(paramStopName)}`);
   };
 
+  // 右端の時刻インデックスから該当の「〇時」ブロックへスクロールする
+  const handleHourIndexClick = (hour: number) => {
+    document.getElementById(`hour-block-${hour}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-gray-400 font-bold animate-pulse">読み込み中...</div>
+      <div className="flex min-h-full items-center justify-center bg-[#f9f9f9]">
+        <div className="animate-pulse text-xs font-bold text-black/40">読み込み中...</div>
       </div>
     );
   }
 
   if (!currentInfo) {
     return (
-      <div className="min-h-screen bg-white p-4">
-        <button onClick={() => router.back()} className="mb-4 text-gray-600 font-medium flex items-center">
-          <ChevronLeft className="w-5 h-5 mr-1" />
+      <div className="min-h-full bg-[#f9f9f9] p-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-1 text-base text-black active:opacity-60"
+        >
+          <ChevronLeft size={24} />
           戻る
         </button>
-        <p className="text-gray-500 text-center mt-10 font-bold">時刻表情報が見つかりません</p>
+        <p className="mt-10 text-center text-xs font-bold text-black/50">時刻表情報が見つかりません</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans">
-      {/* 上部ヘッダーエリア */}
-      <div className="bg-white sticky top-0 z-20">
-        <div className="p-4 flex items-center">
-          <button 
-            onClick={() => router.back()}
-            className="flex items-center text-gray-600 text-base font-medium"
-          >
-            <ChevronLeft className="w-6 h-6 mr-1" />
-            出発地点
-          </button>
-        </div>
-
-        {/* 駅名・方面 */}
-        <div className="text-center pb-3">
-          <h2 className="text-2xl font-black text-black tracking-tight">{paramStopName || currentInfo.routeName}</h2>
-          <p className="text-sm font-medium text-gray-600 mt-1">{currentInfo.direction} 方面</p>
-        </div>
-
-        {/* 路線名帯 (ライトグリーン) */}
-        <div className="bg-[#A8CD64] text-white py-1 relative flex items-center justify-center">
-          {/* 左端の装飾 */}
-          <div className="absolute left-0 top-0 bottom-0 flex items-center pl-6">
-             <div className="w-3.5 h-3.5 bg-white rounded-full"></div>
-          </div>
-          <span className="text-sm font-bold tracking-widest">{currentInfo.routeName}</span>
-          {/* 右端の装飾 */}
-          <div className="absolute right-0 top-0 bottom-0 flex items-center pr-6">
-             <div className="w-3.5 h-3.5 bg-white rounded-full"></div>
+    <div className="flex min-h-full flex-col bg-[#f9f9f9]">
+      {/* 上部ヘッダー（戻る／路線図／曜日切り替え） */}
+      <div className="sticky top-0 z-20 bg-white drop-shadow-[0px_2px_6px_rgba(0,0,0,0.06)]">
+        <div className="bg-white py-1">
+          <div className="flex items-center px-4">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              aria-label="戻る"
+              className="flex items-center p-2.5 text-black active:opacity-60"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <p className="text-base leading-4 text-black">出発地点</p>
           </div>
         </div>
-        
-        {/* （もし前後の駅名があれば表示するスペース。今回は仮で省略） */}
-        <div className="flex justify-between px-6 py-2 text-xs font-medium text-gray-700">
-          <span>&nbsp;</span>
-          <span>&nbsp;</span>
+
+        {/* 駅名・方面・路線図バー */}
+        <div className="flex flex-col items-center gap-4 bg-white py-4">
+          <p className="w-full truncate px-4 py-0.5 text-center text-[20px] font-bold leading-7 text-black">
+            {paramStopName || currentInfo.routeName}
+          </p>
+          <p className="w-full truncate px-4 text-center text-xs leading-4 text-black">
+            {currentInfo.direction} 方面
+          </p>
+
+          <div className="flex w-full flex-col gap-2">
+            <div className="flex w-full items-center">
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2 bg-[#142547] py-1 pl-6 pr-2">
+                <span className="size-4 shrink-0 rounded-full bg-white" />
+                <p className="min-w-0 flex-1 truncate text-center text-[11px] font-bold leading-4 text-white">
+                  {currentInfo.routeName}
+                </p>
+                <span className="size-4 shrink-0 rounded-full bg-white" />
+              </div>
+              {/* 進行方向を示す矢印 */}
+              <span className="h-6 w-4 shrink-0 bg-[#142547] [clip-path:polygon(0%_0%,100%_50%,0%_100%)]" />
+            </div>
+            <div className="flex items-start justify-between gap-2 px-5 text-[11px] leading-4 text-black">
+              <span className="truncate">{originStop}</span>
+              <span className="truncate">{terminalStop}</span>
+            </div>
+          </div>
         </div>
 
-        {/* タブ切り替え */}
+        {/* 曜日タブ */}
         {availableDays.length > 0 && (
-          <div className="px-4 pb-4">
-            <div className="flex bg-[#F2F2F2] rounded-lg overflow-hidden p-1 gap-1">
+          <div className="flex items-center justify-center bg-white p-4">
+            <div className="flex h-10 w-full max-w-[345px] items-center rounded-lg bg-[#eee] p-1 drop-shadow-[0px_2px_6px_rgba(0,0,0,0.06)]">
               {availableDays.map((d) => {
                 const isActive = currentInfo.route_id === d.routeId;
                 return (
                   <button
                     key={d.routeId}
+                    type="button"
                     onClick={() => handleTabClick(d.routeId)}
-                    className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all ${
-                      isActive 
-                        ? 'bg-[#A8CD64] text-white shadow-sm' 
-                        : 'text-gray-600 hover:bg-gray-200'
+                    className={`flex h-8 flex-1 items-center justify-center rounded-lg px-2 py-1 text-[13px] leading-4 text-black transition-colors ${
+                      isActive ? 'bg-[#89c986] font-bold' : 'font-normal'
                     }`}
                   >
                     {d.dayType}
@@ -215,53 +239,58 @@ function TimetableViewContent() {
         )}
       </div>
 
-      {/* 時刻表コンテンツ */}
-      <div className="flex-1 pb-28 relative">
+      {/* 時刻表 */}
+      <div className="relative flex-1 pb-24">
         {scheduleByHour.length === 0 ? (
-          <p className="text-gray-400 text-center mt-10 text-sm font-bold">発車時刻データがありません</p>
+          <p className="mt-10 text-center text-xs font-bold text-black/40">発車時刻データがありません</p>
         ) : (
-          <div>
-            {scheduleByHour.map((group, idx) => (
-              <div key={idx}>
-                {/* 帯 */}
-                <div className="bg-[#EAEAEA] px-4 py-1.5 border-t border-[#D9D9D9]">
-                  <span className="font-extrabold text-black text-sm">{group.hour}時</span>
+          <>
+            {scheduleByHour.map((group) => (
+              <div key={group.hour} id={`hour-block-${group.hour}`}>
+                <div className="flex items-center bg-[#eee] px-4 py-1">
+                  <p className="text-xs font-bold leading-4 text-black">{group.hour}時</p>
                 </div>
-                {/* 分のリスト */}
-                <div className="px-6 py-4 grid grid-cols-5 gap-y-4 gap-x-2">
-                  {group.minutes.map((m, mIdx) => (
-                    <div key={mIdx} className="text-center">
-                      <span className="text-2xl font-medium text-black">{m}</span>
+                <div className="flex flex-col bg-white py-2">
+                  {chunkMinutes(group.minutes).map((row, rowIdx) => (
+                    <div key={rowIdx} className="grid grid-cols-5 px-6 py-2">
+                      {row.map((minute, minuteIdx) => (
+                        <span
+                          key={minuteIdx}
+                          className="text-center text-[20px] font-medium leading-6 text-black"
+                        >
+                          {minute}
+                        </span>
+                      ))}
                     </div>
                   ))}
                 </div>
               </div>
             ))}
-          </div>
+
+            {/* 右端の時刻インデックス */}
+            {scheduleByHour.length > 1 && (
+              <div className="fixed bottom-32 right-0 z-10 flex flex-col items-center pr-1">
+                {scheduleByHour.map((group) => (
+                  <button
+                    key={group.hour}
+                    type="button"
+                    onClick={() => handleHourIndexClick(group.hour)}
+                    className="px-1 text-[10px] font-bold leading-4 text-[#010101] active:opacity-60"
+                  >
+                    {group.hour}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* 画面下部固定アクションバー */}
-      <div className="fixed bottom-16 left-0 right-0 bg-[#F2F2F2] p-4 flex space-x-3 z-30 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] border-t border-gray-200">
-        <button 
-          onClick={() => alert('運行情報ページへ遷移します（未実装）')}
-          className="w-[72px] h-[64px] bg-gray-500 rounded-xl flex flex-col items-center justify-center text-white active:scale-[0.98] transition-transform shadow-sm"
-        >
-          <div className="font-bold text-2xl leading-none mb-1">!</div>
-          <span className="text-[10px] font-bold">運行情報</span>
-        </button>
-        
-        <button 
-          onClick={toggleFavorite}
-          className={`flex-1 h-[64px] rounded-xl font-bold text-base flex items-center justify-center transition-transform active:scale-[0.98] shadow-sm ${
-            isFavorite 
-              ? 'bg-[#A8CD64] text-white hover:bg-[#96bc54]' 
-              : 'bg-white text-[#A8CD64] border-2 border-[#A8CD64] hover:bg-gray-50'
-          }`}
-        >
-          {isFavorite ? '登録を解除する' : '時刻表を登録する'}
-        </button>
-      </div>
+      <DetailActionBar
+        actionLabel={isFavorite ? '登録を解除する' : '登録する'}
+        onAction={toggleFavorite}
+        released={isFavorite}
+      />
     </div>
   );
 }
@@ -269,8 +298,8 @@ function TimetableViewContent() {
 export default function TimetableViewPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-gray-400 font-bold animate-pulse">読み込み中...</div>
+      <div className="flex min-h-full items-center justify-center bg-[#f9f9f9]">
+        <div className="animate-pulse text-xs font-bold text-black/40">読み込み中...</div>
       </div>
     }>
       <TimetableViewContent />

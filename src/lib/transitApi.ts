@@ -154,8 +154,9 @@ export async function planJourney(params: PlanParams): Promise<PlanResult> {
 export function formatClock(secs: number): string {
   const normalized = Math.round(secs / 60) * 60;
   const totalMinutes = Math.floor(normalized / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  // 24h超・負値を0〜23時の範囲へ正規化する(翌日の便でも「24:30」等にならないように)
+  const hours = ((Math.floor(totalMinutes / 60) % 24) + 24) % 24;
+  const minutes = ((totalMinutes % 60) + 60) % 60;
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 

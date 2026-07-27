@@ -15,5 +15,5 @@ r_013,バス,JR北海道バス,新29[野幌運動公園線],野幌運動公園,�
 r_014,バス,JR北海道バス,新29[野幌運動公園線],野幌運動公園,土日・祝,timetable_jrbus_shin29_ShinsapporoToJohodai_weekends.csv
 r_015,JR,JR北海道,函館本線,札幌駅,平日,timetable_jr_hakodatehonsen_NopporoToSapporo_weekdays.csv
 r_016,JR,JR北海道,函館本線,札幌駅,土日・祝,timetable_jr_hakodatehonsen_NopporoToSapporo_weekend.csv
-r_017,JR,JR北海道,函館本線,野幌駅,平日,timetable_jr_hakodatehonsen_SapporoToNopporo_weekdays.csv
-r_018,JR,JR北海道,函館本線,野幌駅,土日・祝,timetable_jr_hakodatehonsen_SapporoToNopporo_weekend.csv
+r_017,JR,JR北海道,函館本線,岩見沢駅,平日,timetable_jr_hakodatehonsen_SapporoToNopporo_weekdays.csv
+r_018,JR,JR北海道,函館本線,岩見沢駅,土日・祝,timetable_jr_hakodatehonsen_SapporoToNopporo_weekend.csv

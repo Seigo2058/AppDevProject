@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   X,
   TrainFront,
-  Bus,
+  BusFront,
   MapPin,
   Plane,
   Building2,
@@ -27,7 +27,7 @@ import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
 
 // TransitAPIのdescriptionはOSMタグ由来の自由テキスト（固定の列挙型ではない）。
 // "type"や"type / 運営元"の形式で返ってくるため、"/"より前の種別部分だけを見て
-// 対応するアイコンを引く。ここに無い種別はBus（既定の停留所アイコン）にフォールバックする。
+// 対応するアイコンを引く。ここに無い種別はBusFront（既定の停留所アイコン）にフォールバックする。
 const POI_ICONS: Record<string, LucideIcon> = {
   "施設": Building2,
   school: School,
@@ -80,7 +80,7 @@ function getPlaceIcon(place: PlaceSuggestion): LucideIcon {
   if (place.kind === "station") return TrainFront;
   const poiType = place.description?.split("/")[0]?.trim();
   if (poiType && poiType in POI_ICONS) return POI_ICONS[poiType];
-  return Bus;
+  return BusFront;
 }
 
 export interface LocationSearchResult {

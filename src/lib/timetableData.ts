@@ -102,46 +102,94 @@ export async function fetchTimetableList(): Promise<TimetableInfo[]> {
   }
 }
 
-export interface SearchResult {
-  matchedName: string;
-  routeName: string;
+export interface StopSearchResult {
+  stopName: string;
+  routeCount: number;
+  transportTypes: string[];
 }
 
-// 検索機能：駅・停留所名または路線名で部分一致検索し、一致する名前と路線名のペアを返す
-export async function searchStopsAndRoutes(keyword: string): Promise<SearchResult[]> {
+// 検索機能：駅・停留所名で部分一致検索し、停留所単位（重複なし）で返す。
+// 路線の選択は停留所を選んだ後の画面で行う。
+export async function searchStops(keyword: string): Promise<StopSearchResult[]> {
   if (!keyword.trim()) return [];
   const routeStops = await fetchRouteStops();
   const lowerKeyword = keyword.toLowerCase();
 
-  const results: SearchResult[] = [];
-  const added = new Set<string>();
+  // 停留所名ごとに、そこを通る路線名と交通機関種別を集約する
+  const byStop = new Map<string, { routeNames: Set<string>; transportTypes: Set<string> }>();
 
   for (const item of routeStops) {
-    // 停留所一覧のいずれかがマッチ
     for (const stop of item.stops) {
-      if (stop.toLowerCase().includes(lowerKeyword)) {
-        const key = `${stop}-${item.routeName}`;
-        if (!added.has(key)) {
-          added.add(key);
-          results.push({ matchedName: stop, routeName: item.routeName });
-        }
+      if (!stop.toLowerCase().includes(lowerKeyword)) continue;
+      let entry = byStop.get(stop);
+      if (!entry) {
+        entry = { routeNames: new Set(), transportTypes: new Set() };
+        byStop.set(stop, entry);
       }
+      entry.routeNames.add(item.routeName);
+      if (item.transportType) entry.transportTypes.add(item.transportType);
     }
   }
 
-  return results;
+  const results: StopSearchResult[] = Array.from(byStop.entries()).map(([stopName, entry]) => ({
+    stopName,
+    routeCount: entry.routeNames.size,
+    transportTypes: Array.from(entry.transportTypes),
+  }));
+
+  // 前方一致を優先し、その中では名前が短い（＝キーワードに近い）ものを上に出す
+  return results.sort((a, b) => {
+    const aStarts = a.stopName.toLowerCase().startsWith(lowerKeyword);
+    const bStarts = b.stopName.toLowerCase().startsWith(lowerKeyword);
+    if (aStarts !== bStarts) return aStarts ? -1 : 1;
+    if (a.stopName.length !== b.stopName.length) return a.stopName.length - b.stopName.length;
+    return a.stopName.localeCompare(b.stopName, 'ja');
+  });
 }
 
-// 特定の路線名に紐づく方面リストを取得する
-export async function getDirectionsByRouteName(routeName: string): Promise<string[]> {
-  const timetables = await fetchTimetableList();
-  const matched = timetables.filter(t => t.routeName === routeName);
-  
-  const directions = new Set<string>();
-  for (const t of matched) {
-    directions.add(t.direction);
+export interface StopDirectionOption {
+  direction: string;
+  routeId: string; // 平日を優先した代表の route_id
+}
+
+export interface StopLineGroup {
+  routeName: string;
+  transportType: string;
+  directions: StopDirectionOption[];
+}
+
+// 指定した停留所から乗車できる路線を、路線ごとに方面をまとめて返す。
+// route_stops_list.csv は route_id（＝路線＋方面＋曜日）単位で停車順を持つため、
+// その停留所が終点になっている便は乗車できないものとして除外する。
+export async function getLinesWithDirectionsByStop(stopName: string): Promise<StopLineGroup[]> {
+  if (!stopName) return [];
+  const [routeStops, timetables] = await Promise.all([fetchRouteStops(), fetchTimetableList()]);
+
+  const groups = new Map<string, StopLineGroup>();
+
+  for (const rs of routeStops) {
+    const index = rs.stops.indexOf(stopName);
+    if (index === -1 || index === rs.stops.length - 1) continue;
+
+    const info = timetables.find(t => t.route_id === rs.route_id);
+    if (!info) continue;
+
+    let group = groups.get(rs.routeName);
+    if (!group) {
+      group = { routeName: rs.routeName, transportType: rs.transportType, directions: [] };
+      groups.set(rs.routeName, group);
+    }
+
+    const existing = group.directions.find(d => d.direction === info.direction);
+    if (existing) {
+      // 同じ方面が曜日違いで複数ある場合は平日を代表にする
+      if (info.dayType === '平日') existing.routeId = info.route_id;
+      continue;
+    }
+    group.directions.push({ direction: info.direction, routeId: info.route_id });
   }
-  return Array.from(directions);
+
+  return Array.from(groups.values());
 }
 
 // 路線名、方面、曜日から route_id などを取得する
@@ -173,53 +221,61 @@ export async function fetchTimetableData(csvFileName: string): Promise<string[][
   }
 }
 
-// 端の停留所かどうかを判定し、もし端であればその停留所から出発する平日のroute_idを返す
-export async function checkEdgeStopAndGetRouteId(routeName: string, stopName: string): Promise<string | null> {
-  const routeStops = await fetchRouteStops();
-  const matchedStops = routeStops.filter(r => r.routeName === routeName);
-  
-  let isEdge = false;
-  for (const r of matchedStops) {
-    if (r.stops.length > 0 && (r.stops[0] === stopName || r.stops[r.stops.length - 1] === stopName)) {
-      isEdge = true;
-      break;
-    }
-  }
-
-  if (!isEdge) return null;
-
-  // 端である場合、その駅から出発するルートを探す
-  const departingRoutes = matchedStops.filter(r => r.stops.length > 0 && r.stops[0] === stopName);
-  if (departingRoutes.length === 0) return null;
-
-  const timetables = await fetchTimetableList();
-  for (const dr of departingRoutes) {
-    const tInfo = timetables.find(t => t.route_id === dr.route_id && t.dayType === '平日');
-    if (tInfo) return tInfo.route_id;
-  }
-  
-  return departingRoutes[0].route_id;
-}
-
 export interface FavoriteItem {
   routeId: string;
   stopName: string;
 }
 
-export function saveFavoriteRoute(routeId: string, stopName: string) {
-  if (typeof window === 'undefined') return;
-  const current = getFavoriteRoutes();
-  const exists = current.some(f => f.routeId === routeId && f.stopName === stopName);
-  if (!exists) {
-    localStorage.setItem('favoriteRoutesV2', JSON.stringify([...current, { routeId, stopName }]));
-  }
+// route_id は「路線＋方面＋曜日」単位だが、登録は曜日を区別しない。
+// そのため同じ路線・方面の route_id（平日／土日・祝）をまとめて1件として扱う。
+export async function getSameLineRouteIds(routeId: string): Promise<string[]> {
+  const timetables = await fetchTimetableList();
+  const info = timetables.find(t => t.route_id === routeId);
+  if (!info) return [routeId];
+  return timetables
+    .filter(t => t.routeName === info.routeName && t.direction === info.direction)
+    .map(t => t.route_id);
 }
 
-export function removeFavoriteRoute(routeId: string, stopName: string) {
+// 登録時に保存する代表の route_id。表示・遷移は平日を既定にする。
+async function getRepresentativeRouteId(routeId: string): Promise<string> {
+  const timetables = await fetchTimetableList();
+  const info = timetables.find(t => t.route_id === routeId);
+  if (!info) return routeId;
+  const weekday = timetables.find(
+    t => t.routeName === info.routeName && t.direction === info.direction && t.dayType === '平日'
+  );
+  return weekday ? weekday.route_id : routeId;
+}
+
+export async function saveFavoriteRoute(routeId: string, stopName: string) {
   if (typeof window === 'undefined') return;
-  const current = getFavoriteRoutes();
-  const updated = current.filter(f => !(f.routeId === routeId && f.stopName === stopName));
+  const [representative, sameLineIds] = await Promise.all([
+    getRepresentativeRouteId(routeId),
+    getSameLineRouteIds(routeId),
+  ]);
+  // 曜日違いで重複登録されないよう、同じ路線・方面の既存分を代表1件に置き換える。
+  const others = getFavoriteRoutes().filter(
+    f => !(sameLineIds.includes(f.routeId) && f.stopName === stopName)
+  );
+  localStorage.setItem(
+    'favoriteRoutesV2',
+    JSON.stringify([...others, { routeId: representative, stopName }])
+  );
+}
+
+export async function removeFavoriteRoute(routeId: string, stopName: string) {
+  if (typeof window === 'undefined') return;
+  const sameLineIds = await getSameLineRouteIds(routeId);
+  const updated = getFavoriteRoutes().filter(
+    f => !(sameLineIds.includes(f.routeId) && f.stopName === stopName)
+  );
   localStorage.setItem('favoriteRoutesV2', JSON.stringify(updated));
+}
+
+export async function isFavoriteRoute(routeId: string, stopName: string): Promise<boolean> {
+  const sameLineIds = await getSameLineRouteIds(routeId);
+  return getFavoriteRoutes().some(f => sameLineIds.includes(f.routeId) && f.stopName === stopName);
 }
 
 export function getFavoriteRoutes(): FavoriteItem[] {

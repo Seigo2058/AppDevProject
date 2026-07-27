@@ -5,20 +5,11 @@ import Link from "next/link";
 import { Plus, Loader2, MapPin } from "lucide-react";
 import MyRouteCard from "./MyRouteCard";
 import {
-  searchRoutes,
-  getDayType,
-  minutesToTime,
+  searchNextAvailableRoutes,
   timeToMinutes,
   SearchResultJourney
 } from "@/lib/generalRouteSearch";
-import type { BoardingSelection } from "@/lib/schedule";
-
-interface SavedRoute {
-  routeId: string;
-  routeName: string;
-  departure: BoardingSelection;
-  destination: BoardingSelection;
-}
+import type { SavedRoute } from "@/lib/myRoutes";
 
 export default function MyRouteSection() {
   const [myRoutes, setMyRoutes] = useState<SavedRoute[]>([]);
@@ -45,23 +36,23 @@ export default function MyRouteSection() {
           return;
         }
 
-        setMyRoutes(parsed);
+        // ホームには「ホームに追加」で星を付けたルートだけを出す。
+        // pinnedToHome を持たない既存データは、従来通り表示されるよう未指定＝表示とみなす。
+        const pinned = parsed.filter((route) => route.pinnedToHome !== false);
+        if (pinned.length === 0) {
+          setLoading(false);
+          return;
+        }
 
-        const now = new Date();
-        const currentMins = now.getHours() * 60 + now.getMinutes();
-        const timeStr = minutesToTime(currentMins);
-        const dayType = getDayType(now);
+        setMyRoutes(pinned);
 
         const trips: Record<string, SearchResultJourney | null> = {};
         await Promise.all(
           parsed.map(async (route) => {
             try {
-              const results = await searchRoutes(
+              const results = await searchNextAvailableRoutes(
                 route.departure,
-                route.destination,
-                timeStr,
-                "departure",
-                dayType
+                route.destination
               );
               trips[route.routeId] = results.length > 0 ? results[0] : null;
             } catch (e) {
@@ -82,12 +73,13 @@ export default function MyRouteSection() {
     loadAndFetchRoutes();
   }, []);
 
-  const getRemainingTimeText = (departureTime: string): string => {
+  const getRemainingTimeText = (departureTime: string, isNextDay?: boolean): string => {
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     const depMins = timeToMinutes(departureTime);
     if (depMins === -1) return "-";
-    const diff = depMins - nowMins;
+    // 翌日の便は24時間を加算して残り時間を算出する
+    const diff = depMins - nowMins + (isNextDay ? 24 * 60 : 0);
 
     if (diff < 0) {
       return "運行終了";
@@ -101,39 +93,33 @@ export default function MyRouteSection() {
   };
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-black">Myルート</h2>
-        {myRoutes.length > 0 && (
-          <span className="text-[10px] text-black/45">直近の運行便を表示中</span>
-        )}
-      </div>
+    <section className="flex flex-col gap-4">
+      <h2 className="text-base font-bold text-black">Myルート</h2>
 
-      {loading ? (
-        <div className="bg-[#fafafa] shadow-sm rounded-lg h-[90px] flex items-center justify-center border border-gray-100">
-          <Loader2 size={20} className="animate-spin text-[#aecb72] mr-2" />
-          <span className="text-xs text-black/50">マイルート情報を読み込み中...</span>
-        </div>
-      ) : myRoutes.length === 0 ? (
-        <div className="bg-[#fafafa] border border-gray-150 p-6 rounded-lg text-center text-xs text-black/50">
-          <MapPin size={24} className="mx-auto mb-2 text-black/20" />
-          <p>登録されたマイルートがありません。</p>
-          <p className="mt-0.5 text-black/40">ルートタブから新規登録してください。</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {myRoutes.map((route) => {
+      <div className="flex flex-col gap-2">
+        {loading ? (
+          <div className="bg-[#fafafa] rounded-lg h-[90px] flex items-center justify-center">
+            <Loader2 size={20} className="animate-spin text-[#a0e25e] mr-2" />
+            <span className="text-xs text-black/50">マイルート情報を読み込み中...</span>
+          </div>
+        ) : myRoutes.length === 0 ? (
+          <div className="bg-[#fafafa] rounded-lg h-[90px] flex flex-col items-center justify-center text-xs text-black/50">
+            <MapPin size={20} className="mb-1 text-black/20" />
+            <p>登録されたマイルートがありません。</p>
+          </div>
+        ) : (
+          myRoutes.map((route) => {
             const trip = routeTrips[route.routeId];
             if (!trip) {
               return (
                 <div
                   key={route.routeId}
-                  className="w-full bg-[#fafafa] shadow-sm rounded-lg p-3 border border-gray-100 flex flex-col justify-center min-h-[90px]"
+                  className="w-full bg-[#fafafa] rounded-lg h-[90px] px-4 py-2 flex flex-col justify-center gap-1"
                 >
                   <p className="text-[10px] text-black truncate">
                     {route.departure.name}から{route.destination.name}まで
                   </p>
-                  <p className="text-xs text-black/40 italic mt-1.5">
+                  <p className="text-xs text-black/40">
                     本日の運行は終了、または利用可能な便が見つかりません
                   </p>
                 </div>
@@ -148,25 +134,26 @@ export default function MyRouteSection() {
                 departureTime={trip.departureTime}
                 arrivalTime={trip.arrivalTime}
                 durationMinutes={trip.durationMinutes}
-                remainingLabel={getRemainingTimeText(trip.departureTime)}
+                remainingLabel={getRemainingTimeText(trip.departureTime, trip.isNextDay)}
                 fare={trip.fare}
                 transferLabel={trip.transferCount > 0 ? `${trip.transferCount}回` : "無"}
+                isNextDay={trip.isNextDay}
               />
             );
-          })}
-        </div>
-      )}
+          })
+        )}
 
-      {/* Button to add/go to routes page */}
-      <Link
-        href="/routes"
-        aria-label="ルートを追加"
-        className="w-full h-[90px] border-[1.5px] border-dashed border-[#aecb72] rounded-lg flex items-center justify-center active:bg-[#aecb72]/5 transition-colors"
-      >
-        <span className="flex items-center justify-center size-8 rounded-full bg-[#aecb72] text-white">
-          <Plus size={20} />
-        </span>
-      </Link>
+        {/* Button to add/go to routes page */}
+        <Link
+          href="/routes"
+          aria-label="ルートを追加"
+          className="w-full h-[90px] border-[1.5px] border-dashed border-[#a0e25e] rounded-lg flex items-center justify-center transition-colors hover:border-[#8dc753] hover:bg-black/5 active:border-[#8dc753] active:bg-black/12"
+        >
+          <span className="flex items-center justify-center size-8 rounded-full bg-[#a0e25e] text-white">
+            <Plus size={20} />
+          </span>
+        </Link>
+      </div>
     </section>
   );
 }

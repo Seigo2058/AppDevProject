@@ -1,171 +1,103 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Search,
-  MapPin,
-  Clock,
-  ArrowRight,
-  Loader2,
-  ChevronRight,
-  Plus,
-  ChevronLeft,
-  Trash2,
-  Calendar,
-  Bus,
-  TrainFront,
-  Footprints,
-  Info,
-  ExternalLink,
-  Edit2,
-  Check,
-  AlertTriangle,
-  X
-} from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronLeft, Loader2 } from "lucide-react";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
 import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
 import { findCsvStopNameByEndpoint, canonicalStopName } from "@/lib/stopRegistry";
 import {
   searchRoutes,
+  searchNextAvailableRoutes,
   getDayType,
   timeToMinutes,
   minutesToTime,
-  calculateCsvFare,
-  timeDifferenceMinutes,
   SearchResultJourney,
-  RouteSegmentDetail
 } from "@/lib/generalRouteSearch";
 import type { BoardingSelection } from "@/lib/schedule";
-
-const ACCENT = "#aecb72";
-
-interface SavedRoute {
-  routeId: string;
-  routeName: string;
-  departure: BoardingSelection;
-  destination: BoardingSelection;
-  createdAt: string;
-  updatedAt: string;
-}
+import { createRouteId, loadMyRoutes, saveMyRoutes, SavedRoute } from "@/lib/myRoutes";
+import RouteSearchForm from "./components/RouteSearchForm";
+import DateTimePickerSheet, { TimeMode } from "./components/DateTimePickerSheet";
+import MyRouteRow from "./components/MyRouteRow";
+import RouteResultCard from "./components/RouteResultCard";
+import RouteDetailView from "./components/RouteDetailView";
 
 export default function RoutesPage() {
-  const router = useRouter();
-
-  // Navigation states
   const [view, setView] = useState<"list" | "results" | "detail">("list");
 
-  // Registered My Routes state
   const [myRoutes, setMyRoutes] = useState<SavedRoute[]>([]);
   const [routeTrips, setRouteTrips] = useState<Record<string, SearchResultJourney | null>>({});
-  const [loadingTrips, setLoadingTrips] = useState<Record<string, boolean>>({});
+  const [isEditingRoutes, setIsEditingRoutes] = useState(false);
 
-  // Input states for new search
   const [departure, setDeparture] = useState<BoardingSelection | null>(null);
   const [destination, setDestination] = useState<BoardingSelection | null>(null);
-  const [targetDate, setTargetDate] = useState<string>("");
-  const [targetTime, setTargetTime] = useState<string>("");
-  const [timeType, setTimeType] = useState<"departure" | "arrival">("departure");
+  const [targetDate, setTargetDate] = useState("");
+  const [targetTime, setTargetTime] = useState("");
+  const [timeMode, setTimeMode] = useState<TimeMode>("now");
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
-  // Search Results state
   const [searchResults, setSearchResults] = useState<SearchResultJourney[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
-
-  // Selected Journey for Detail view
   const [selectedJourney, setSelectedJourney] = useState<SearchResultJourney | null>(null);
+  // 詳細画面の戻り先。マイルートから直接開いた場合は一覧に戻す。
+  const [detailOrigin, setDetailOrigin] = useState<"list" | "results">("results");
 
-  // States for search inputs of departure/destination
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchingField, setSearchingField] = useState<"departure" | "destination" | null>(null);
   const [csvCoverageStops, setCsvCoverageStops] = useState<string[]>([]);
-  // 停留所名 -> 事業者名（"よく使う乗り場"に駅名の下へ小さく表示する）
   const [stopAgencyNames, setStopAgencyNames] = useState<Record<string, string>>({});
 
-  // Delay info modal state
-  const [isDelayModalOpen, setIsDelayModalOpen] = useState(false);
-
-  // Edit route state
-  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
-
-  // System/Day parameters stored during search to enable "previous/next" trip updates
+  // 「前の便/次の便」で検索条件を引き継ぐため、検索実行時の条件を保持する
   const [searchDeparture, setSearchDeparture] = useState<BoardingSelection | null>(null);
   const [searchDestination, setSearchDestination] = useState<BoardingSelection | null>(null);
   const [searchDayType, setSearchDayType] = useState<"平日" | "土日・祝">("平日");
 
-  // Load registered routes from localStorage
   useEffect(() => {
-    function loadSavedRoutes() {
-      if (typeof window === "undefined") return;
-      try {
-        const saved = localStorage.getItem("my_routes");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setMyRoutes(parsed);
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load saved routes:", e);
-      }
-    }
-
-    // Set default date and time
     const now = new Date();
-    setTargetDate(now.toISOString().split("T")[0]);
-    setTargetTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
+    setTargetDate(
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+    );
+    setTargetTime(
+      `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    );
 
-    loadSavedRoutes();
+    setMyRoutes(loadMyRoutes());
+
     getCsvCoverageStops().then((stops) => {
       const campusStops = ["情報大学前", "eDCタワー前"];
-      const merged = [
+      setCsvCoverageStops([
         ...campusStops,
         ...stops.filter((s) => !campusStops.includes(s)),
-      ];
-      setCsvCoverageStops(merged);
+      ]);
     });
     getStopAgencyNames().then((map) => setStopAgencyNames(Object.fromEntries(map)));
   }, []);
 
-  // Fetch the next available trip for each registered route dynamically
+  // 登録済みマイルートそれぞれの直近の便を取得する(本日終了時は翌日の便)
   useEffect(() => {
     if (myRoutes.length === 0) return;
 
-    const now = new Date();
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-    const timeStr = minutesToTime(currentMins);
-    const dayType = getDayType(now);
-
     myRoutes.forEach(async (route) => {
-      // Avoid refetching if already loading or loaded
-      if (routeTrips[route.routeId] !== undefined || loadingTrips[route.routeId]) return;
-
-      setLoadingTrips((prev) => ({ ...prev, [route.routeId]: true }));
+      if (routeTrips[route.routeId] !== undefined) return;
       try {
-        const results = await searchRoutes(
+        const results = await searchNextAvailableRoutes(
           route.departure,
-          route.destination,
-          timeStr,
-          "departure",
-          dayType
+          route.destination
         );
         setRouteTrips((prev) => ({
           ...prev,
-          [route.routeId]: results.length > 0 ? results[0] : null
+          [route.routeId]: results.length > 0 ? results[0] : null,
         }));
       } catch (e) {
         console.error(`Failed to fetch trip for route ${route.routeId}:`, e);
         setRouteTrips((prev) => ({ ...prev, [route.routeId]: null }));
-      } finally {
-        setLoadingTrips((prev) => ({ ...prev, [route.routeId]: false }));
       }
     });
-  }, [myRoutes]);
+  }, [myRoutes, routeTrips]);
 
-  const handleOpenSearchModal = (field: "departure" | "destination") => {
-    setSearchingField(field);
-    setIsSearchModalOpen(true);
+  const persistRoutes = (routes: SavedRoute[]) => {
+    setMyRoutes(routes);
+    saveMyRoutes(routes);
   };
 
   const handleSearchSelect = (result: LocationSearchResult) => {
@@ -181,31 +113,22 @@ export default function RoutesPage() {
       nextSelection = { source: "csv", name: result.name };
     }
 
-    if (searchingField === "departure") {
-      setDeparture(nextSelection);
-    } else if (searchingField === "destination") {
-      setDestination(nextSelection);
-    }
+    if (searchingField === "departure") setDeparture(nextSelection);
+    else if (searchingField === "destination") setDestination(nextSelection);
     setSearchingField(null);
   };
 
-  // Perform route search
-  const handleSearch = async () => {
-    if (!departure || !destination) {
-      setSearchError("出発地と目的地を入力してください");
-      return;
-    }
+  // 現在の検索条件(出発地・目的地・日時)で経路を検索する
+  const runSearch = useCallback(async () => {
+    if (!departure || !destination) return;
 
     setSearchLoading(true);
     setSearchError("");
-    setView("results");
-
-    // Save search context for next/prev paging
     setSearchDeparture(departure);
     setSearchDestination(destination);
 
     try {
-      const dateObj = new Date(targetDate);
+      const dateObj = new Date(`${targetDate}T00:00:00`);
       const dayType = getDayType(isNaN(dateObj.getTime()) ? new Date() : dateObj);
       setSearchDayType(dayType);
 
@@ -213,61 +136,100 @@ export default function RoutesPage() {
         departure,
         destination,
         targetTime,
-        timeType,
+        timeMode === "arrival" ? "arrival" : "departure",
         dayType
       );
-
       setSearchResults(results);
-    } catch (e: any) {
-      setSearchError(e.message || "検索中にエラーが発生しました");
+    } catch (e) {
+      setSearchError(e instanceof Error ? e.message : "検索中にエラーが発生しました");
       setSearchResults([]);
     } finally {
       setSearchLoading(false);
     }
+  }, [departure, destination, targetDate, targetTime, timeMode]);
+
+  const handleSearch = () => {
+    if (!departure || !destination) {
+      setSearchError("出発地と目的地を入力してください");
+      return;
+    }
+    setView("results");
   };
 
-  // Save route to My Routes
-  const handleRegisterRoute = (journey: SearchResultJourney) => {
+  // 検索結果画面では、検索条件(経路・時刻)が変更されたら自動的に再検索する
+  useEffect(() => {
+    if (view !== "results") return;
+    if (!departure || !destination) return;
+    runSearch();
+  }, [view, departure, destination, runSearch]);
+
+  const handleRegisterRoute = () => {
     if (!searchDeparture || !searchDestination) return;
 
-    const routeNameInput = prompt(
-      "登録するルートの名前を入力してください",
-      `${searchDeparture.name} → ${searchDestination.name}`
-    );
-
-    if (routeNameInput === null) return; // User cancelled
-
-    const routeName = routeNameInput.trim() || `${searchDeparture.name} → ${searchDestination.name}`;
     const newRoute: SavedRoute = {
-      routeId: Math.random().toString(36).substring(2, 9),
-      routeName,
+      routeId: createRouteId(),
+      routeName: `${searchDeparture.name} → ${searchDestination.name}`,
       departure: searchDeparture,
       destination: searchDestination,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      pinnedToHome: true,
     };
 
-    const updatedRoutes = [...myRoutes, newRoute];
-    setMyRoutes(updatedRoutes);
-    localStorage.setItem("my_routes", JSON.stringify(updatedRoutes));
-
-    // Force trip fetch for the new route
+    persistRoutes([...myRoutes, newRoute]);
     setRouteTrips((prev) => {
       const next = { ...prev };
       delete next[newRoute.routeId];
       return next;
     });
-
-    alert("マイルートに登録しました");
+    setView("list");
   };
 
-  const handleUnregisterRoute = (routeId: string) => {
-    if (!confirm("このルートをマイルートから削除しますか？")) return;
+  // マイルートのカードから、その経路の直近の便の詳細を直接開く
+  const handleOpenMyRoute = async (route: SavedRoute) => {
+    setDeparture(route.departure);
+    setDestination(route.destination);
+    setSearchDeparture(route.departure);
+    setSearchDestination(route.destination);
+    setDetailOrigin("list");
+    setSearchError("");
 
-    const updated = myRoutes.filter((r) => r.routeId !== routeId);
-    setMyRoutes(updated);
-    localStorage.setItem("my_routes", JSON.stringify(updated));
+    const now = new Date();
+    const dayType = getDayType(now);
+    setSearchDayType(dayType);
 
+    const cached = routeTrips[route.routeId];
+    if (cached) {
+      setSelectedJourney(cached);
+      setView("detail");
+      return;
+    }
+
+    // 直近の便がまだ取得できていない場合はこの場で検索してから詳細を開く
+    setSelectedJourney(null);
+    setSearchLoading(true);
+    setView("detail");
+    try {
+      const results = await searchNextAvailableRoutes(
+        route.departure,
+        route.destination,
+        now
+      );
+      if (results.length > 0) {
+        setSelectedJourney(results[0]);
+        setRouteTrips((prev) => ({ ...prev, [route.routeId]: results[0] }));
+      } else {
+        setSearchError("利用可能な便が見つかりません");
+      }
+    } catch (e) {
+      setSearchError(e instanceof Error ? e.message : "検索中にエラーが発生しました");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleDeleteRoute = (routeId: string) => {
+    persistRoutes(myRoutes.filter((r) => r.routeId !== routeId));
     setRouteTrips((prev) => {
       const next = { ...prev };
       delete next[routeId];
@@ -275,46 +237,31 @@ export default function RoutesPage() {
     });
   };
 
-  const handleStartRename = (route: SavedRoute) => {
-    setEditingRouteId(route.routeId);
-    setEditingName(route.routeName);
+  const handleTogglePin = (routeId: string) => {
+    persistRoutes(
+      myRoutes.map((r) =>
+        r.routeId === routeId
+          ? { ...r, pinnedToHome: !r.pinnedToHome, updatedAt: new Date().toISOString() }
+          : r
+      )
+    );
   };
 
-  const handleSaveRename = (routeId: string) => {
-    const updated = myRoutes.map((r) => {
-      if (r.routeId === routeId) {
-        return { ...r, routeName: editingName, updatedAt: new Date().toISOString() };
-      }
-      return r;
-    });
-    setMyRoutes(updated);
-    localStorage.setItem("my_routes", JSON.stringify(updated));
-    setEditingRouteId(null);
-  };
-
-  // Go to previous trip
-  const handlePreviousTrip = async () => {
+  // 選択中の便の前後の便へ移動する
+  const handleShiftTrip = async (direction: "previous" | "next") => {
     if (!selectedJourney || !searchDeparture || !searchDestination) return;
     setSearchLoading(true);
 
     try {
-      const prevMins = timeToMinutes(selectedJourney.departureTime) - 1;
-      const prevTime = minutesToTime(prevMins);
-
+      const baseMins = timeToMinutes(selectedJourney.departureTime);
       const results = await searchRoutes(
         searchDeparture,
         searchDestination,
-        prevTime,
-        "arrival",
+        minutesToTime(direction === "previous" ? baseMins - 1 : baseMins + 1),
+        direction === "previous" ? "arrival" : "departure",
         searchDayType
       );
-
-      if (results.length > 0) {
-        // Take the one arriving closest to target (index 0 is sorted latest-arrival first)
-        setSelectedJourney(results[0]);
-      } else {
-        alert("これより前の便は見つかりませんでした");
-      }
+      if (results.length > 0) setSelectedJourney(results[0]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -322,63 +269,18 @@ export default function RoutesPage() {
     }
   };
 
-  // Go to next trip
-  const handleNextTrip = async () => {
-    if (!selectedJourney || !searchDeparture || !searchDestination) return;
-    setSearchLoading(true);
-
-    try {
-      const nextMins = timeToMinutes(selectedJourney.departureTime) + 1;
-      const nextTime = minutesToTime(nextMins);
-
-      const results = await searchRoutes(
-        searchDeparture,
-        searchDestination,
-        nextTime,
-        "departure",
-        searchDayType
-      );
-
-      if (results.length > 0) {
-        // Take the one departing closest to target (index 0 is sorted earliest-departure first)
-        setSelectedJourney(results[0]);
-      } else {
-        alert("これより後の便は見つかりませんでした");
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  // Formatter for remaining time in cards
-  const getRemainingTimeText = (departureTime: string): string => {
+  const getRemainingTimeText = (departureTime: string, isNextDay?: boolean): string => {
     const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
-    const depMins = timeToMinutes(departureTime);
-    if (depMins === -1) return "-";
-    const diff = depMins - nowMins;
-
-    if (diff < 0) {
-      return "運行終了";
-    }
-    if (diff < 60) {
-      return `${diff}分`;
-    }
-    const hrs = Math.floor(diff / 60);
-    const mins = diff % 60;
-    return `${hrs}:${String(mins).padStart(2, "0")}`;
+    // 翌日の便は24時間を加算して残り時間を算出する
+    const diff =
+      timeToMinutes(departureTime) -
+      (now.getHours() * 60 + now.getMinutes()) +
+      (isNextDay ? 24 * 60 : 0);
+    if (diff < 0) return "運行終了";
+    if (diff < 60) return `${diff}分`;
+    return `${Math.floor(diff / 60)}:${String(diff % 60).padStart(2, "0")}`;
   };
 
-  // Segment icon utility
-  const getSegmentIcon = (mode: RouteSegmentDetail["mode"]) => {
-    if (mode === "train") return <TrainFront size={16} className="text-blue-600" />;
-    if (mode === "walk") return <Footprints size={16} className="text-gray-400" />;
-    return <Bus size={16} className="text-[#aecb72]" />;
-  };
-
-  // Check if current search is already registered
   const isSelectedRouteRegistered = () => {
     if (!searchDeparture || !searchDestination) return false;
     return myRoutes.some(
@@ -388,496 +290,153 @@ export default function RoutesPage() {
     );
   };
 
-  // Toggle departure/destination inputs
-  const handleSwapLocations = () => {
-    const temp = departure;
-    setDeparture(destination);
-    setDestination(temp);
-  };
+  const searchForm = (
+    <RouteSearchForm
+      departure={departure}
+      destination={destination}
+      date={targetDate}
+      time={targetTime}
+      mode={timeMode}
+      onPickLocation={(field) => {
+        setSearchingField(field);
+        setIsSearchModalOpen(true);
+      }}
+      onSwap={() => {
+        setDeparture(destination);
+        setDestination(departure);
+      }}
+      onOpenTimePicker={() => setIsPickerOpen(true)}
+      onSearch={view === "list" ? handleSearch : undefined}
+    />
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 text-black">
-      {/* Title Header */}
-      <div className="bg-white p-4 sticky top-0 z-20 border-b border-gray-100 shadow-sm flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          {view !== "list" && (
-            <button
-              onClick={() => setView(view === "detail" ? "results" : "list")}
-              className="p-1 -ml-1 text-gray-500 hover:bg-gray-100 rounded-lg mr-1"
-            >
-              <ChevronLeft size={20} />
-            </button>
-          )}
-          <h2 className="text-lg font-bold text-gray-800">
-            {view === "list" && "マイルート & 経路検索"}
-            {view === "results" && "検索結果一覧"}
-            {view === "detail" && "経路詳細"}
-          </h2>
-        </div>
-        {view === "detail" && selectedJourney && (
-          <button
-            onClick={() => setIsDelayModalOpen(true)}
-            className="text-xs font-bold text-red-500 border border-red-200 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1"
-          >
-            <AlertTriangle size={13} />
-            運行情報
-          </button>
-        )}
-      </div>
+    <div className="relative min-h-full bg-[#eee] px-4 pt-4 pb-8 text-black">
+      {view === "list" && (
+        <div className="flex flex-col gap-6">
+          <h1 className="text-2xl font-bold text-black">ルート検索</h1>
 
-      <div className="max-w-2xl mx-auto p-4 space-y-6">
-        {/* VIEW 1: MY ROUTES & ROUTE SEARCH INPUTS */}
-        {view === "list" && (
-          <>
-            {/* My Routes Section */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-500 tracking-wider">登録済みマイルート</h3>
-                <span className="text-[10px] text-gray-400">現在時刻基準で直近便を表示しています</span>
-              </div>
+          {searchForm}
+          {searchError && <p className="text-xs text-red-600">{searchError}</p>}
 
-              {myRoutes.length === 0 ? (
-                <div className="bg-white border border-gray-100 p-8 rounded-xl text-center shadow-sm">
-                  <MapPin className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500 font-medium">登録されているマイルートはありません</p>
-                  <p className="text-xs text-gray-400 mt-1">下の経路検索からルートを検索して登録してください</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {myRoutes.map((route) => {
-                    const trip = routeTrips[route.routeId];
-                    const isLoading = loadingTrips[route.routeId];
-
-                    return (
-                      <div
-                        key={route.routeId}
-                        className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          {editingRouteId === route.routeId ? (
-                            <div className="flex items-center gap-1.5 w-full mr-12">
-                              <input
-                                type="text"
-                                value={editingName}
-                                onChange={(e) => setEditingName(e.target.value)}
-                                className="border border-gray-300 rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleSaveRename(route.routeId)}
-                                className="bg-blue-500 text-white p-1 rounded hover:bg-blue-600"
-                              >
-                                <Check size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="min-w-0 pr-12">
-                              <h4 className="font-bold text-gray-800 text-sm truncate">{route.routeName}</h4>
-                              <p className="text-[10px] text-gray-400 mt-0.5">
-                                {route.departure.name} → {route.destination.name}
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="absolute right-4 top-4 flex items-center space-x-1.5">
-                            {editingRouteId !== route.routeId && (
-                              <button
-                                onClick={() => handleStartRename(route)}
-                                className="p-1 text-gray-400 hover:text-blue-500 rounded hover:bg-gray-50"
-                                title="名前を変更"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleUnregisterRoute(route.routeId)}
-                              className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-gray-50"
-                              title="ルート削除"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Next trip information */}
-                        {isLoading ? (
-                          <div className="flex items-center justify-center py-2">
-                            <Loader2 size={16} className="animate-spin text-gray-400 mr-2" />
-                            <span className="text-xs text-gray-400">直近便を検索中...</span>
-                          </div>
-                        ) : trip ? (
-                          <button
-                            onClick={() => {
-                              setSearchDeparture(route.departure);
-                              setSearchDestination(route.destination);
-                              const now = new Date();
-                              setSearchDayType(getDayType(now));
-                              setSelectedJourney(trip);
-                              setView("detail");
-                            }}
-                            className="w-full text-left bg-gray-50 p-3 rounded-lg border border-gray-100 flex items-center justify-between mt-2 hover:bg-gray-100 transition-colors active:scale-[0.99]"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-baseline gap-2 flex-wrap">
-                                <span className="text-xl font-bold text-gray-900">{trip.departureTime}</span>
-                                <span className="text-xl font-bold text-gray-300">-</span>
-                                <span className="text-xl font-bold text-gray-900">{trip.arrivalTime}</span>
-                                <span className="text-xs text-gray-500">（{trip.durationMinutes}分）</span>
-                                <span className="text-[11px] text-gray-600 bg-gray-200/60 px-1.5 py-0.5 rounded font-medium">
-                                  残り <span className="font-bold">{getRemainingTimeText(trip.departureTime)}</span>
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
-                                <span className="font-bold text-gray-700">{trip.fare}円</span>
-                                <span>|</span>
-                                <span>乗換 {trip.transferCount > 0 ? `${trip.transferCount}回` : "なし"}</span>
-                                <span>|</span>
-                                <span className="truncate">{trip.routeName}</span>
-                              </div>
-                            </div>
-                            <ChevronRight size={14} className="text-gray-400 shrink-0 ml-2" />
-                          </button>
-                        ) : (
-                          <p className="text-xs text-gray-400 italic py-2 mt-1">本日の運行は終了、または利用可能な便が見つかりません</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* Route Search Box */}
-            <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-gray-500 mb-2 flex items-center">
-                <Search size={16} className="mr-1 text-blue-500" />
-                経路を検索する
-              </h3>
-
-              <div className="space-y-3 relative">
-                {/* Departure Input */}
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-xs font-bold text-blue-500">出発</span>
-                  <button
-                    onClick={() => handleOpenSearchModal("departure")}
-                    className="w-full text-left pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm min-h-[46px] hover:bg-gray-100 transition-colors flex items-center justify-between"
-                  >
-                    <span className={departure ? "text-gray-900 font-bold" : "text-gray-400"}>
-                      {departure ? departure.name : "出発地（駅・停留所・住所）を入力"}
-                    </span>
-                    <MapPin size={16} className="text-gray-400" />
-                  </button>
-                </div>
-
-                {/* Swap button */}
-                <div className="flex justify-center -my-2.5 relative z-10">
-                  <button
-                    onClick={handleSwapLocations}
-                    className="bg-white p-2 rounded-full border border-gray-200 hover:bg-gray-50 transition-colors shadow-sm"
-                    title="出発地と目的地を入れ替える"
-                  >
-                    <ArrowRight size={14} className="text-gray-500 transform rotate-90" />
-                  </button>
-                </div>
-
-                {/* Destination Input */}
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-xs font-bold text-red-500">到着</span>
-                  <button
-                    onClick={() => handleOpenSearchModal("destination")}
-                    className="w-full text-left pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm min-h-[46px] hover:bg-gray-100 transition-colors flex items-center justify-between"
-                  >
-                    <span className={destination ? "text-gray-900 font-bold" : "text-gray-400"}>
-                      {destination ? destination.name : "目的地（駅・停留所・住所）を入力"}
-                    </span>
-                    <MapPin size={16} className="text-gray-400" />
-                  </button>
-                </div>
-
-                {/* Time Specified Input Area */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase">日付指定</label>
-                    <input
-                      type="date"
-                      value={targetDate}
-                      onChange={(e) => setTargetDate(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase">時刻指定</label>
-                    <input
-                      type="time"
-                      value={targetTime}
-                      onChange={(e) => setTargetTime(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    />
-                  </div>
-                </div>
-
-                {/* Type Selection (Departure vs Arrival) */}
-                <div className="flex border border-gray-200 rounded-xl overflow-hidden text-xs">
-                  <button
-                    onClick={() => setTimeType("departure")}
-                    className={`flex-1 py-3 text-center font-bold transition-colors ${
-                      timeType === "departure" ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    出発予定時刻
-                  </button>
-                  <button
-                    onClick={() => setTimeType("arrival")}
-                    className={`flex-1 py-3 text-center font-bold transition-colors ${
-                      timeType === "arrival" ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    到着予定時刻
-                  </button>
-                </div>
-
-                {/* Submit Search button */}
-                <button
-                  onClick={handleSearch}
-                  disabled={searchLoading}
-                  className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-[0.98] disabled:bg-blue-400 cursor-pointer text-sm"
-                >
-                  {searchLoading ? (
-                    <Loader2 size={18} className="animate-spin mr-2" />
-                  ) : (
-                    <Search size={18} className="mr-2" />
-                  )}
-                  検索する
-                </button>
-
-                {searchError && <p className="text-xs text-red-500 text-center font-bold">{searchError}</p>}
-              </div>
-            </section>
-          </>
-        )}
-
-        {/* VIEW 2: SEARCH RESULTS */}
-        {view === "results" && (
-          <section className="space-y-4">
-            {/* Header info */}
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center text-xs">
-              <div>
-                <p className="text-gray-500">
-                  <span className="font-bold text-gray-700">出発：</span>
-                  {searchDeparture?.name}
-                </p>
-                <p className="text-gray-500 mt-1">
-                  <span className="font-bold text-gray-700">到着：</span>
-                  {searchDestination?.name}
-                </p>
-              </div>
-              <div className="text-right text-gray-500 border-l border-gray-200 pl-4 shrink-0">
-                <p className="font-bold text-gray-700">{targetDate}</p>
-                <p className="mt-1">
-                  {targetTime} {timeType === "departure" ? "出発" : "到着"}指定
-                </p>
-              </div>
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-black">MYルート</h2>
+              <button
+                type="button"
+                onClick={() => setIsEditingRoutes((prev) => !prev)}
+                className="text-[13px] font-bold text-[#8dc753] transition-opacity hover:opacity-70 active:opacity-60"
+              >
+                {isEditingRoutes ? "完了" : "ホームに追加・編集"}
+              </button>
             </div>
 
-            {searchLoading ? (
-              <div className="text-center py-16 space-y-3">
-                <Loader2 size={36} className="animate-spin text-[#aecb72] mx-auto" />
-                <p className="text-sm font-bold text-gray-400">最適な経路を算出しています...</p>
-              </div>
-            ) : searchResults.length === 0 ? (
-              <div className="bg-white p-12 rounded-2xl border border-gray-100 text-center shadow-sm">
-                <Info className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                <p className="text-gray-500 font-bold text-sm">条件に一致する便がありません</p>
-                <p className="text-xs text-gray-400 mt-1.5">日時を変更するか、別の発着地点をお試しください</p>
-                <button
-                  onClick={() => setView("list")}
-                  className="mt-4 px-4 py-2 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  条件を入力し直す
-                </button>
+            {myRoutes.length === 0 ? (
+              <div className="flex h-[90px] items-center justify-center rounded-lg bg-[#fafafa] text-xs text-black/50">
+                登録されたマイルートがありません。
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider pl-1">候補ルート一覧</p>
-                {searchResults.map((journey, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setSelectedJourney(journey);
-                      setView("detail");
-                    }}
-                    className="w-full text-left bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between hover:bg-gray-50/50 active:scale-[0.99] cursor-pointer"
-                  >
-                    <div className="flex-1 min-w-0 pr-4">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-2xl font-black text-gray-900 leading-none">{journey.departureTime}</span>
-                        <span className="text-xl font-bold text-gray-300">-</span>
-                        <span className="text-2xl font-black text-gray-900 leading-none">{journey.arrivalTime}</span>
-                        <span className="text-xs font-bold text-[#aecb72] bg-[#aecb72]/10 px-2 py-0.5 rounded ml-1">
-                          {journey.durationMinutes}分
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-2.5 text-xs text-gray-500">
-                        <span className="font-bold text-gray-800">{journey.fare}円</span>
-                        <span className="text-gray-300">|</span>
-                        <span>乗換 {journey.transferCount > 0 ? `${journey.transferCount}回` : "なし"}</span>
-                        <span className="text-gray-300">|</span>
-                        <span className="truncate font-medium text-gray-600">{journey.routeName}</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="text-gray-400 shrink-0" size={16} />
-                  </button>
+              <div className="flex flex-col gap-2">
+                {myRoutes.map((route) => (
+                  <MyRouteRow
+                    key={route.routeId}
+                    route={route}
+                    trip={routeTrips[route.routeId]}
+                    remainingLabel={
+                      routeTrips[route.routeId]
+                        ? getRemainingTimeText(
+                            routeTrips[route.routeId]!.departureTime,
+                            routeTrips[route.routeId]!.isNextDay
+                          )
+                        : "-"
+                    }
+                    editing={isEditingRoutes}
+                    onOpen={() => handleOpenMyRoute(route)}
+                    onDelete={() => handleDeleteRoute(route.routeId)}
+                    onTogglePin={() => handleTogglePin(route.routeId)}
+                  />
                 ))}
               </div>
             )}
           </section>
-        )}
+        </div>
+      )}
 
-        {/* VIEW 3: ROUTE DETAILS */}
-        {view === "detail" && selectedJourney && (
-          <section className="space-y-4">
-            {/* Summary card */}
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3">
-              <div className="flex justify-between items-baseline">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-gray-900">{selectedJourney.departureTime}</span>
-                  <span className="text-2xl font-bold text-gray-300">-</span>
-                  <span className="text-3xl font-black text-gray-900">{selectedJourney.arrivalTime}</span>
-                </div>
-                <span className="text-xs font-bold text-[#aecb72] bg-[#aecb72]/10 px-2.5 py-1 rounded-full">
-                  所要時間 {selectedJourney.durationMinutes}分
-                </span>
+      {view === "results" && (
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-black active:opacity-60"
+          >
+            <ChevronLeft size={22} />
+            <span className="text-base font-bold">ルート検索</span>
+          </button>
+
+          {searchForm}
+
+          <div className="mt-4 flex flex-col gap-2">
+            {searchLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={28} className="animate-spin text-[#a0e25e]" />
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-500 pt-1.5 border-t border-gray-100">
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-gray-800 text-sm">{selectedJourney.fare}円</span>
-                  <span className="text-gray-200">|</span>
-                  <span>乗換 {selectedJourney.transferCount > 0 ? `${selectedJourney.transferCount}回` : "直通"}</span>
-                </div>
-                <span className="text-[11px] text-gray-400 font-medium">
-                  日付: {targetDate} ({searchDayType})
-                </span>
-              </div>
+            ) : searchError ? (
+              <p className="text-xs text-red-600">{searchError}</p>
+            ) : searchResults.length === 0 ? (
+              <p className="py-8 text-center text-xs text-black/50">
+                条件に合う経路が見つかりませんでした。
+              </p>
+            ) : (
+              searchResults.map((journey, index) => (
+                <RouteResultCard
+                  key={`${journey.departureTime}-${journey.arrivalTime}-${index}`}
+                  journey={journey}
+                  onClick={() => {
+                    setSelectedJourney(journey);
+                    setDetailOrigin("results");
+                    setView("detail");
+                  }}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {view === "detail" && !selectedJourney && (
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => setView(detailOrigin)}
+            aria-label="戻る"
+            className="flex size-8 items-center justify-center text-black active:opacity-60"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          {searchLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={28} className="animate-spin text-[#a0e25e]" />
             </div>
+          ) : (
+            <p className="py-8 text-center text-xs text-black/50">
+              {searchError || "経路を表示できませんでした。"}
+            </p>
+          )}
+        </div>
+      )}
 
-            {/* Paging Buttons (前の便 / 後の便) */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={handlePreviousTrip}
-                disabled={searchLoading}
-                className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 font-bold py-3.5 rounded-xl text-xs shadow-sm flex items-center justify-center gap-1 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
-              >
-                {searchLoading ? <Loader2 size={13} className="animate-spin" /> : <ChevronLeft size={16} />}
-                前の便
-              </button>
-              <button
-                onClick={handleNextTrip}
-                disabled={searchLoading}
-                className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 font-bold py-3.5 rounded-xl text-xs shadow-sm flex items-center justify-center gap-1 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
-              >
-                後の便
-                {searchLoading ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={16} />}
-              </button>
-            </div>
+      {view === "detail" && selectedJourney && (
+        <RouteDetailView
+          journey={selectedJourney}
+          isRegistered={isSelectedRouteRegistered()}
+          isPaging={searchLoading}
+          onBack={() => setView(detailOrigin)}
+          onPreviousTrip={() => handleShiftTrip("previous")}
+          onNextTrip={() => handleShiftTrip("next")}
+          onRegister={handleRegisterRoute}
+        />
+      )}
 
-            {/* Timeline */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">乗り換えルート詳細</h4>
-              <div className="relative pl-6">
-                {/* Vertical line connecting steps */}
-                <div className="absolute left-[6px] top-2 bottom-2 w-0.5 bg-gray-200" />
-
-                <div className="space-y-6">
-                  {selectedJourney.segments.map((seg, idx) => {
-                    const isLast = idx === selectedJourney.segments.length - 1;
-                    return (
-                      <div key={idx} className="relative space-y-2">
-                        {/* Circle dot representing step */}
-                        <div
-                          className="absolute -left-[24px] top-1 size-3 rounded-full bg-white border-2"
-                          style={{ borderColor: ACCENT }}
-                        />
-
-                        {/* Step details */}
-                        <div className="flex justify-between items-start">
-                          <div className="min-w-0 pr-4">
-                            <span className="text-xs font-bold text-gray-400">
-                              {seg.departureTime}発
-                            </span>
-                            <h5 className="font-bold text-sm text-gray-800 truncate mt-0.5">
-                              {seg.fromStop}
-                            </h5>
-                          </div>
-                        </div>
-
-                        {/* Transition segment */}
-                        <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 flex items-center gap-2 text-xs">
-                          {getSegmentIcon(seg.mode)}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-gray-700 truncate">
-                              {seg.routeName || (seg.mode === "walk" ? "徒歩" : "バス")}
-                            </p>
-                            <p className="text-[10px] text-gray-400 mt-0.5">
-                              所要時間: {timeDifferenceMinutes(seg.departureTime, seg.arrivalTime)}分
-                            </p>
-                          </div>
-                          <span className="font-bold text-gray-600 shrink-0">
-                            {seg.mode === "walk"
-                              ? "無料"
-                              : `${calculateCsvFare(seg.fromStop, seg.toStop, seg.routeName || "")}円`}
-                          </span>
-                        </div>
-
-                        {/* Destination point for this leg (only if it is the last segment) */}
-                        {isLast && (
-                          <div className="relative pt-4">
-                            <div
-                              className="absolute -left-[24px] top-[22px] size-3 rounded-full bg-white border-2"
-                              style={{ borderColor: ACCENT }}
-                            />
-                            <span className="text-xs font-bold text-gray-400">
-                              {seg.arrivalTime}着
-                            </span>
-                            <h5 className="font-bold text-sm text-gray-800 truncate mt-0.5">
-                              {seg.toStop}
-                            </h5>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="space-y-2">
-              <button
-                onClick={() => handleRegisterRoute(selectedJourney)}
-                disabled={isSelectedRouteRegistered()}
-                className={`w-full py-4 rounded-xl font-bold text-sm shadow-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] border cursor-pointer ${
-                  isSelectedRouteRegistered()
-                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : "bg-[#aecb72] hover:bg-[#9cb663] text-white border-[#aecb72]"
-                }`}
-              >
-                <Plus size={16} />
-                {isSelectedRouteRegistered() ? "マイルート登録済み" : "このルートをマイルートに登録"}
-              </button>
-
-              <button
-                onClick={() => setView("results")}
-                className="w-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 py-3.5 rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer"
-              >
-                検索結果一覧に戻る
-              </button>
-            </div>
-          </section>
-        )}
-      </div>
-
-      {/* Modal 1: Location Search Modal */}
       <LocationSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => {
@@ -891,74 +450,19 @@ export default function RoutesPage() {
         pinnedAgencyNames={stopAgencyNames}
       />
 
-      {/* Modal 2: Delay/Operation Status Modal */}
-      {isDelayModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end justify-center sm:items-center p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md overflow-hidden shadow-xl animate-in slide-in-from-bottom">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-red-50">
-              <div className="flex items-center gap-2 text-red-600 font-bold">
-                <AlertTriangle size={18} />
-                運行状況リンク一覧
-              </div>
-              <button
-                onClick={() => setIsDelayModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-gray-500 leading-relaxed mb-1">
-                運行の遅延・運休情報は各交通機関の公式ページよりご確認ください。
-              </p>
-              <div className="grid grid-cols-1 gap-2.5">
-                <a
-                  href="https://www3.jrhokkaido.co.jp/webunkou/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3.5 border border-gray-100 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors font-bold text-xs"
-                >
-                  <span>JR北海道 運行情報</span>
-                  <ExternalLink size={14} className="text-gray-400" />
-                </a>
-                <a
-                  href="https://unkou-jhb.buskita.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3.5 border border-gray-100 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors font-bold text-xs"
-                >
-                  <span>ジェイ・アール北海道バス 運行情報</span>
-                  <ExternalLink size={14} className="text-gray-400" />
-                </a>
-                <a
-                  href="https://www.chuo-bus.co.jp/support/stop/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3.5 border border-gray-100 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors font-bold text-xs"
-                >
-                  <span>北海道中央バス 停留所案内</span>
-                  <ExternalLink size={14} className="text-gray-400" />
-                </a>
-                <a
-                  href="https://operationstatus.city.sapporo.jp/unkojoho/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3.5 border border-gray-100 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors font-bold text-xs"
-                >
-                  <span>札幌市営地下鉄 運行情報</span>
-                  <ExternalLink size={14} className="text-gray-400" />
-                </a>
-              </div>
-              <button
-                onClick={() => setIsDelayModalOpen(false)}
-                className="w-full mt-2 border border-gray-200 text-gray-700 py-3 rounded-xl text-xs font-bold hover:bg-gray-50 active:scale-[0.98] transition-all cursor-pointer"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DateTimePickerSheet
+        open={isPickerOpen}
+        date={targetDate}
+        time={targetTime}
+        mode={timeMode}
+        onCancel={() => setIsPickerOpen(false)}
+        onConfirm={({ date, time, mode }) => {
+          setTargetDate(date);
+          setTargetTime(time);
+          setTimeMode(mode);
+          setIsPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bus, MapPin, GraduationCap, Search, ChevronRight, Info } from "lucide-react";
+import { BusFront, MapPin, GraduationCap, Search, ChevronRight, Info } from "lucide-react";
 import {
   ClassPeriod,
   BoardingSelection,
@@ -20,8 +20,10 @@ import {
 import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
 import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
+import TodayScheduleSection from "@/app/components/home/TodayScheduleSection";
+import Button from "@/components/ui/Button";
 
-const ACCENT = "#aecb72";
+const ACCENT = "#a0e25e";
 
 function InfoBadge({ className = "" }: { className?: string }) {
   return (
@@ -62,7 +64,7 @@ function LegCard({
       type="button"
       onClick={onClick}
       aria-label="乗り換えの道のりを表示"
-      className="w-full text-left bg-[#fbfbfb] border border-[#e8e8e8] shadow-[0px_2px_6px_rgba(0,0,0,0.06)] rounded-lg pl-4 pr-8 py-3 flex items-center gap-2 relative cursor-pointer active:opacity-80 transition-opacity"
+      className="w-full text-left bg-[#fafafa] border border-[#e8e8e8] shadow-[0px_2px_6px_rgba(0,0,0,0.06)] rounded-lg pl-4 pr-8 py-3 flex items-center gap-2 relative cursor-pointer transition-colors hover:bg-[#e6e6e6] active:bg-[#dcdcdc]"
     >
       <div className="flex flex-col gap-1.5 shrink-0">
         <p className="text-xs text-black/50">{leftLabel}</p>
@@ -75,7 +77,7 @@ function LegCard({
       <div className="flex-1 flex flex-col items-center justify-center gap-1.5 self-stretch pt-3 min-w-0">
         <div className="w-full border-t border-dashed border-black/20" />
         <div className="flex items-center gap-1 text-black/60 text-[10px] whitespace-nowrap">
-          <Bus size={13} />
+          <BusFront size={13} />
           <span>{centerLabel}</span>
         </div>
       </div>
@@ -356,13 +358,9 @@ export default function SchedulePage() {
           </div>
           <h3 className="text-lg font-bold text-gray-800">エラーが発生しました</h3>
           <p className="text-sm text-red-500">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-2 px-4 py-2 text-white font-bold rounded-lg text-xs cursor-pointer"
-            style={{ backgroundColor: ACCENT }}
-          >
+          <Button size="S" onClick={() => window.location.reload()} className="mx-auto mt-2">
             再読み込みする
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -371,7 +369,7 @@ export default function SchedulePage() {
   return (
     <div className="min-h-screen bg-[#eee]">
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-8 space-y-4">
-        <h1 className="text-[20px] font-bold text-black">My時間割</h1>
+        <h1 className="text-2xl font-bold text-black">My時間割</h1>
 
         {isEditing ? (
           /* 登録・編集エリア */
@@ -382,7 +380,7 @@ export default function SchedulePage() {
               <p className="text-sm font-bold text-black">バス停乗り場の登録</p>
               <button
                 onClick={() => setIsSearchOpen(true)}
-                className="w-full bg-white border border-[#e8e8e8] rounded-lg p-4 flex items-center justify-between opacity-80 cursor-pointer"
+                className="w-full bg-white border border-[#e8e8e8] rounded-lg p-4 flex items-center justify-between opacity-80 cursor-pointer transition-colors hover:bg-[#ebebeb] active:bg-[#e0e0e0]"
               >
                 <span className="text-sm font-bold text-black">{boarding ? boarding.name : "駅・停留所を検索"}</span>
                 <Search size={16} className="text-black/40 shrink-0" />
@@ -422,8 +420,12 @@ export default function SchedulePage() {
                               key={`${day}-${period.id}`}
                               onClick={() => toggleClass(day, period.id)}
                               aria-pressed={isSelected}
-                              className="size-12 rounded-lg transition-colors cursor-pointer shrink-0"
-                              style={{ backgroundColor: isSelected ? ACCENT : "#d9d9d9" }}
+                              className={`size-12 shrink-0 cursor-pointer rounded-lg transition-colors ${
+                                isSelected
+                                  ? "bg-[#a0e25e] hover:bg-[#93d057] active:bg-[#8dc753]"
+                                  // 未選択のhoverは選択色と同じだと区別が付かないため、淡いプレビュー色にする
+                                  : "bg-[#d9d9d9] hover:bg-[#c9e9a6] active:bg-[#a0e25e]"
+                              }`}
                             />
                           );
                         })}
@@ -433,100 +435,98 @@ export default function SchedulePage() {
                 </div>
               </div>
 
-              <button
-                onClick={() => handleSetIsEditing(false)}
-                className="w-full text-white font-bold text-sm py-[17px] rounded-lg cursor-pointer transition-opacity active:opacity-90"
-                style={{ backgroundColor: ACCENT }}
-              >
-                登録する
-              </button>
+              <Button onClick={() => handleSetIsEditing(false)}>登録する</Button>
             </div>
           </section>
         ) : (
           /* 通学スケジュール表示エリア（画面遷移せず編集エリアと切り替わる） */
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-black">
-                1週間の最適な移動スケジュール
-                {isComputing && <span className="ml-2 text-xs font-bold animate-pulse" style={{ color: ACCENT }}>計算中...</span>}
-              </h2>
-              <button
-                onClick={() => handleSetIsEditing(true)}
-                className="text-[11px] font-bold cursor-pointer"
-                style={{ color: ACCENT }}
-              >
-                編集する
-              </button>
-            </div>
+          <div className="flex flex-col gap-10">
+            <TodayScheduleSection title="今日のスケジュール" />
 
-            {!boarding ? (
-              <div className="bg-[#fafafa] p-8 rounded-lg border border-[#e8e8e8] text-center">
-                <MapPin className="w-10 h-10 text-black/20 mx-auto mb-3" />
-                <p className="text-black/50 font-medium text-sm">
-                  乗車する駅・停留所を登録すると、
-                  <br />
-                  1週間の移動スケジュールを計算します。
-                </p>
+              <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-black">
+                  １週間の最適な移動スケジュール
+                  {isComputing && <span className="ml-2 text-xs font-bold animate-pulse" style={{ color: ACCENT }}>計算中...</span>}
+                </h2>
+                <button
+                  onClick={() => handleSetIsEditing(true)}
+                  className="text-[11px] font-bold cursor-pointer"
+                  style={{ color: ACCENT }}
+                >
+                  編集する
+                </button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {days.map(day => {
-                  const plan = computedSchedules[day];
 
-                  return (
-                    <div
-                      key={day}
-                      className="bg-[#fafafa] rounded-lg shadow-[0px_2px_6px_rgba(0,0,0,0.06)] p-4 space-y-4"
-                    >
-                      <div className="flex items-center gap-8 flex-wrap">
-                        <p className="text-base font-bold text-black shrink-0">{dayFullNames[day]}</p>
-                        {plan && (
-                          <div className="flex items-center gap-4">
-                            <p className="text-xs text-black whitespace-nowrap">
-                              本日の授業時間：<span className="font-bold">{plan.classStart}~{plan.classEnd}</span>
-                            </p>
-                            <span
-                              className="text-white text-[10px] font-bold px-2 py-1 rounded-lg whitespace-nowrap"
-                              style={{ backgroundColor: ACCENT }}
-                            >
-                              {plan.minPeriod}限〜{plan.maxPeriod}限
-                            </span>
+              {!boarding ? (
+                <div className="bg-[#fafafa] p-8 rounded-lg border border-[#e8e8e8] text-center">
+                  <MapPin className="w-10 h-10 text-black/20 mx-auto mb-3" />
+                  <p className="text-black/50 font-medium text-sm">
+                    乗車する駅・停留所を登録すると、
+                    <br />
+                    1週間の移動スケジュールを計算します。
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {days.map(day => {
+                    const plan = computedSchedules[day];
+
+                    return (
+                      <div
+                        key={day}
+                        className="bg-[#fafafa] rounded-lg shadow-[0px_2px_6px_rgba(0,0,0,0.06)] p-4 space-y-4"
+                      >
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <p className="text-base font-bold text-black shrink-0">{dayFullNames[day]}</p>
+                          {plan && (
+                            <div className="flex items-center justify-end gap-4 flex-wrap">
+                              <p className="text-xs text-black whitespace-nowrap">
+                                本日の授業時間：<span className="font-bold">{plan.classStart}~{plan.classEnd}</span>
+                              </p>
+                              <span
+                                className="rounded-lg border p-1 text-[10px] font-bold text-black whitespace-nowrap"
+                                style={{ borderColor: ACCENT }}
+                              >
+                                {plan.minPeriod}限〜{plan.maxPeriod}限
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        <hr className="border-black/10" />
+
+                        {plan ? (
+                          <div className="space-y-4">
+                            <LegSection
+                              label="行き"
+                              leg={plan.outbound}
+                              direction="outbound"
+                              boardingName={boarding.name}
+                              emptyMessage="授業開始時間に間に合う運行バスが見つかりませんでした。"
+                              onOpenDetail={(leg) => openJourneyDetail(day, "outbound", leg, boarding.name)}
+                            />
+                            <LegSection
+                              label="帰り"
+                              leg={plan.inbound}
+                              direction="inbound"
+                              boardingName={boarding.name}
+                              emptyMessage="授業終了後に乗車できる運行バスが見つかりませんでした。"
+                              onOpenDetail={(leg) => openJourneyDetail(day, "inbound", leg, boarding.name)}
+                            />
                           </div>
+                        ) : (
+                          <p className="text-xs text-black/50 text-center py-4">
+                            この曜日はお休みです（授業が登録されていません）
+                          </p>
                         )}
                       </div>
-
-                      <hr className="border-black/10" />
-
-                      {plan ? (
-                        <div className="space-y-4">
-                          <LegSection
-                            label="行き"
-                            leg={plan.outbound}
-                            direction="outbound"
-                            boardingName={boarding.name}
-                            emptyMessage="授業開始時間に間に合う運行バスが見つかりませんでした。"
-                            onOpenDetail={(leg) => openJourneyDetail(day, "outbound", leg, boarding.name)}
-                          />
-                          <LegSection
-                            label="帰り"
-                            leg={plan.inbound}
-                            direction="inbound"
-                            boardingName={boarding.name}
-                            emptyMessage="授業終了後に乗車できる運行バスが見つかりませんでした。"
-                            onOpenDetail={(leg) => openJourneyDetail(day, "inbound", leg, boarding.name)}
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-xs text-black/50 text-center py-4">
-                          この曜日はお休みです（授業が登録されていません）
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                    );
+                  })}
+                </div>
+              )}
+              </section>
+          </div>
         )}
 
         <LocationSearchModal

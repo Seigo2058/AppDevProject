@@ -24,6 +24,8 @@ export interface SearchResultJourney {
   routeName: string;
   segments: RouteSegmentDetail[];
   isCsvOnly: boolean;
+  // 本日の便が終了しており、翌日の便を表示している場合に true
+  isNextDay?: boolean;
 }
 
 // 乗り継ぎ時に見込むバッファ（分）
@@ -747,5 +749,44 @@ export async function searchRoutes(
     filtered.sort((a, b) => timeToMinutes(b.arrivalTime) - timeToMinutes(a.arrivalTime));
   }
 
+  // 極端に時間がかかるルート(最短の2倍以上)を除外する
+  const validDurations = filtered
+    .map(j => j.durationMinutes)
+    .filter(d => typeof d === "number" && d > 0);
+  if (validDurations.length > 0) {
+    const minDuration = Math.min(...validDurations);
+    filtered = filtered.filter(j => !(j.durationMinutes > 0) || j.durationMinutes < minDuration * 2);
+  }
+
   return filtered.slice(0, 5);
+}
+
+// 直近の便を検索する。本日の便が終了している場合は翌日の始発から検索し、
+// 得られた便には isNextDay: true を付与する(Myルートの表示用)。
+export async function searchNextAvailableRoutes(
+  from: BoardingSelection,
+  to: BoardingSelection,
+  baseDate: Date = new Date()
+): Promise<SearchResultJourney[]> {
+  const currentMins = baseDate.getHours() * 60 + baseDate.getMinutes();
+  const today = await searchRoutes(
+    from,
+    to,
+    minutesToTime(currentMins),
+    "departure",
+    getDayType(baseDate)
+  );
+  if (today.length > 0) return today;
+
+  // 本日の便が無ければ翌日の始発(0:00)から検索する
+  const nextDay = new Date(baseDate);
+  nextDay.setDate(nextDay.getDate() + 1);
+  const nextResults = await searchRoutes(
+    from,
+    to,
+    "0:00",
+    "departure",
+    getDayType(nextDay)
+  );
+  return nextResults.map((r) => ({ ...r, isNextDay: true }));
 }

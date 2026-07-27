@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Search, Bus, ChevronRight, Trash2 } from 'lucide-react';
+import { Search, BusFront, ChevronRight, Trash2 } from 'lucide-react';
 import { getFavoriteRoutes, getTimetableInfoById, removeFavoriteRoute, TimetableInfo } from '@/lib/timetableData';
 
-const ACCENT = "#aecb72";
+const ACCENT = "#a0e25e";
 
 // TransitAPI/CSVのどちらも運賃・乗換回数を返さないため、Figmaデザインの見た目を
 // 再現する目的の仮値。実データ連携が決まり次第、実際の値に差し替える。
@@ -26,11 +26,16 @@ export default function TimetableTopPage() {
       }
 
       const favs: { info: TimetableInfo; stopName: string }[] = [];
+      // 登録は曜日を区別しないため、同じ路線・方面・停留所は1件にまとめる
+      // （曜日別に登録された古いデータが残っていても重複表示しない）。
+      const seen = new Set<string>();
       for (const item of savedItems) {
         const info = await getTimetableInfoById(item.routeId);
-        if (info) {
-          favs.push({ info, stopName: item.stopName });
-        }
+        if (!info) continue;
+        const key = `${info.routeName}|${info.direction}|${item.stopName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        favs.push({ info, stopName: item.stopName });
       }
       setFavorites(favs);
       setLoading(false);
@@ -38,10 +43,10 @@ export default function TimetableTopPage() {
     loadFavorites();
   }, []);
 
-  const handleRemove = (routeId: string, stopName: string, e: React.MouseEvent) => {
+  const handleRemove = async (routeId: string, stopName: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    removeFavoriteRoute(routeId, stopName);
+    await removeFavoriteRoute(routeId, stopName);
     setFavorites(prev => prev.filter(f => !(f.info.route_id === routeId && f.stopName === stopName)));
   };
 
@@ -51,7 +56,7 @@ export default function TimetableTopPage() {
         <h1 className="text-[20px] font-bold text-black">時刻表検索</h1>
 
         <Link href="/timetable/search" className="block w-full">
-          <div className="w-full h-11 bg-white rounded-lg flex items-center gap-2 px-3 cursor-pointer">
+          <div className="w-full h-11 bg-white rounded-lg flex items-center gap-2 px-3 cursor-pointer transition-colors hover:bg-[#ebebeb] active:bg-[#e0e0e0]">
             <Search size={16} className="text-black/40 shrink-0" />
             <span className="text-xs font-bold text-black/50">駅・停留所名で検索</span>
           </div>
@@ -63,7 +68,7 @@ export default function TimetableTopPage() {
             {favorites.length > 0 && (
               <button
                 onClick={() => setIsEditing(prev => !prev)}
-                className="text-[13px] font-bold cursor-pointer"
+                className="cursor-pointer text-[13px] font-bold transition-opacity hover:opacity-70 active:opacity-60"
                 style={{ color: ACCENT }}
               >
                 {isEditing ? "完了" : "編集"}
@@ -75,7 +80,7 @@ export default function TimetableTopPage() {
             <div className="text-center py-8 text-black/40 text-sm font-bold animate-pulse">読み込み中...</div>
           ) : favorites.length === 0 ? (
             <div className="bg-[#fafafa] p-8 rounded-lg text-center">
-              <Bus className="w-12 h-12 text-black/10 mx-auto mb-3" />
+              <BusFront className="w-12 h-12 text-black/10 mx-auto mb-3" />
               <p className="text-black/50 font-medium text-sm">
                 登録された時刻表はありません。
                 <br />
@@ -88,7 +93,7 @@ export default function TimetableTopPage() {
                 <Link
                   key={`${fav.info.route_id}-${fav.stopName}-${index}`}
                   href={`/timetable/view?route_id=${fav.info.route_id}&stop_name=${encodeURIComponent(fav.stopName)}`}
-                  className="block bg-[#fafafa] rounded-lg px-4 py-3 flex items-center gap-2 active:opacity-80 transition-opacity"
+                  className="block bg-[#fafafa] rounded-lg px-4 py-3 flex items-center gap-2 transition-colors hover:bg-[#e6e6e6] active:bg-[#dcdcdc]"
                 >
                   <div className="flex-1 flex flex-col gap-1 min-w-0">
                     <div className="flex items-center gap-1 text-[10px] text-black/70 flex-wrap">
@@ -107,7 +112,6 @@ export default function TimetableTopPage() {
                       <span className="text-xs text-black/50 font-medium truncate">{fav.info.agencyName}</span>
                     </div>
                     <p className="text-base font-bold text-black leading-tight truncate">{fav.info.routeName}</p>
-                    <p className="text-[11px] font-medium text-black/40">{fav.info.dayType}</p>
                     <div className="flex items-center gap-2 text-[11px] text-black">
                       <span className="font-bold">{DUMMY_FARE}円</span>
                       <span className="text-black/20">|</span>

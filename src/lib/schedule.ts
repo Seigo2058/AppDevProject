@@ -1,9 +1,16 @@
 import { planOutboundLeg, planInboundLeg } from "./journeyPlanner";
+import { loadClassPeriods } from "./firestoreData";
 
 export interface ClassPeriod {
   id: number;
   start: string;
   end: string;
+}
+
+// 授業の時限（Firestore の schoolPeriods コレクション）を取得する。
+export async function fetchClassPeriods(): Promise<ClassPeriod[]> {
+  const periods = await loadClassPeriods();
+  return periods.map(p => ({ id: p.period, start: p.startTime, end: p.endTime }));
 }
 
 // 乗り場の選択元。CSVの5停留所（スクール便の実データがある）を選んだ場合は"csv"、
@@ -50,21 +57,6 @@ export const dayFullNames: Record<string, string> = {
   "木": "木曜日",
   "金": "金曜日"
 };
-
-// 堅牢なCSV行パーサー
-export function parseCSV(text: string): string[][] {
-  try {
-    if (!text) return [];
-    const lines = text.split(/\r?\n/);
-    return lines
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => line.split(',').map(cell => cell.trim()));
-  } catch (e) {
-    console.error("CSV Parse error:", e);
-    return [];
-  }
-}
 
 // HH:MM形式の文字列を深夜0時からの分数に変換する
 export function timeToMinutes(timeStr: string): number {

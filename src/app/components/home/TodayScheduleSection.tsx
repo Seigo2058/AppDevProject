@@ -8,8 +8,7 @@ import {
   DayPlan,
   days,
   dayFullNames,
-  parseCSV,
-  fetchWithTimeout,
+  fetchClassPeriods,
   getDaySchedule,
   getComputedScheduleCache,
   setComputedScheduleCache,
@@ -130,23 +129,9 @@ export default function TodayScheduleSection({ title = "My時間割ルート" }:
   useEffect(() => {
     async function loadData() {
       try {
-        const resPeriods = await fetchWithTimeout("/csv/school_timetable.csv").then((r) => r.text());
-
-        const rawPeriods = parseCSV(resPeriods);
-        const parsedPeriods: ClassPeriod[] = [];
-        for (let i = 1; i < rawPeriods.length; i++) {
-          const row = rawPeriods[i];
-          if (row && row.length >= 3) {
-            const id = parseInt(row[0], 10);
-            if (!isNaN(id)) {
-              parsedPeriods.push({ id, start: row[1] || "", end: row[2] || "" });
-            }
-          }
-        }
-
-        setScheduleData({ periods: parsedPeriods });
+        setScheduleData({ periods: await fetchClassPeriods() });
       } catch (err) {
-        console.error("Failed to load CSV data in TodayScheduleSection:", err);
+        console.error("Failed to load class periods in TodayScheduleSection:", err);
       } finally {
         setIsLoading(false);
       }

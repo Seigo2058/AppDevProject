@@ -217,7 +217,7 @@ async function loadRouteRuns(dayType: string): Promise<RouteRun[]> {
     matched.map(async (t): Promise<RouteRun | null> => {
       const rawStops = stopsById.get(t.route_id);
       if (!rawStops || rawStops.length === 0) return null;
-      const data = await fetchTimetableData(t.csvFileName);
+      const data = await fetchTimetableData(t.route_id);
       if (data.length === 0) return null;
       const [header, ...rows] = data;
       const validRows = rows.filter((r) => r.length > 0);

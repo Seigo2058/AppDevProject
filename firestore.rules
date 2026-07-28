@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// 時刻表データは誰でも読めるが、書き込みはアプリからは行わない。
+// 更新は scripts/seed-firestore.mjs（サービスアカウント経由＝ルールの対象外）で行う。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /timetables/{routeId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /schoolPeriods/{period} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 上記以外は既定で拒否する
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

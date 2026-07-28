@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Firebase のサービスアカウント秘密鍵（Firestore への投入スクリプトで使う）
+serviceAccountKey.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

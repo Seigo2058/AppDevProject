@@ -10,8 +10,7 @@ import {
   CommuteLeg,
   days,
   dayFullNames,
-  parseCSV,
-  fetchWithTimeout,
+  fetchClassPeriods,
   getDaySchedule,
   getComputedScheduleCache,
   setComputedScheduleCache,
@@ -172,35 +171,14 @@ export default function SchedulePage() {
   const [computedSchedules, setComputedSchedules] = useState<Record<string, DayPlan | null>>({});
   const [isComputing, setIsComputing] = useState(false);
 
-  // マウント時にCSVデータを読み込む
+  // マウント時に時限データ（Firestore）を読み込む
   useEffect(() => {
     async function loadData() {
       try {
-        const resPeriods = await fetchWithTimeout("/csv/school_timetable.csv").then(r => {
-          if (!r.ok) throw new Error("timetable.csv の読み込みに失敗しました");
-          return r.text();
-        });
-
-        // 時間割（school_timetable）の解析
-        const rawPeriods = parseCSV(resPeriods);
-        const parsedPeriods: ClassPeriod[] = [];
-        for (let i = 1; i < rawPeriods.length; i++) {
-          const row = rawPeriods[i];
-          if (row && row.length >= 3) {
-            const id = parseInt(row[0], 10);
-            if (!isNaN(id)) {
-              parsedPeriods.push({
-                id: id,
-                start: row[1] || "",
-                end: row[2] || "",
-              });
-            }
-          }
-        }
-        setPeriods(parsedPeriods);
+        setPeriods(await fetchClassPeriods());
         setIsLoading(false);
       } catch (err) {
-        console.error("Failed to load CSV data:", err);
+        console.error("Failed to load class periods:", err);
         setError(err instanceof Error ? err.message : "データの読み込みに失敗しました。");
         setIsLoading(false);
       }

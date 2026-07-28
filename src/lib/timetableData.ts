@@ -1,8 +1,10 @@
+import { loadTimetableDocs } from "@/lib/firestoreData";
+
 export interface RouteStop {
   route_id: string;
   transportType: string; // "バス" | "JR"
   routeName: string;
-  stops: string[]; // カンマ区切りの文字列を配列に変換
+  stops: string[]; // 停車順
 }
 
 export interface TimetableInfo {
@@ -12,61 +14,17 @@ export interface TimetableInfo {
   routeName: string;
   direction: string;
   dayType: string;
-  csvFileName: string;
-}
-
-// 簡単なCSVパーサー (ダブルクォートを考慮)
-export function parseCSVRow(text: string): string[][] {
-  const result: string[][] = [];
-  let row: string[] = [];
-  let inQuotes = false;
-  let cell = '';
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      row.push(cell.trim());
-      cell = '';
-    } else if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && text[i + 1] === '\n') {
-        i++; // skip \n
-      }
-      row.push(cell.trim());
-      result.push(row);
-      row = [];
-      cell = '';
-    } else {
-      cell += char;
-    }
-  }
-  if (cell !== '' || row.length > 0) {
-    row.push(cell.trim());
-    result.push(row);
-  }
-  return result;
 }
 
 export async function fetchRouteStops(): Promise<RouteStop[]> {
   try {
-    const res = await fetch('/csv/route_stops_list.csv');
-    if (!res.ok) return [];
-    const text = await res.text();
-    const rows = parseCSVRow(text);
-
-    // Header: route_id, 交通機関種別, 路線名, 停留所1, 停留所2, ...
-    // データは2行目以降
-    return rows.slice(1).filter(r => r.length >= 4).map(row => {
-      // 停留所は4列目(インデックス3)以降の空でないセル
-      const stops = row.slice(3).map(s => s.trim()).filter(s => s !== '');
-      return {
-        route_id: row[0],
-        transportType: row[1],
-        routeName: row[2],
-        stops: stops
-      };
-    });
+    const docs = await loadTimetableDocs();
+    return docs.map(doc => ({
+      route_id: doc.routeId,
+      transportType: doc.transportType,
+      routeName: doc.routeName,
+      stops: doc.stops,
+    }));
   } catch (error) {
     console.error("Failed to fetch route stops:", error);
     return [];
@@ -81,20 +39,14 @@ export async function getRouteStopsById(routeId: string): Promise<string[]> {
 
 export async function fetchTimetableList(): Promise<TimetableInfo[]> {
   try {
-    const res = await fetch('/csv/timetable_list.csv');
-    if (!res.ok) return [];
-    const text = await res.text();
-    const rows = parseCSVRow(text);
-
-    // Header: route_id,交通機関種別,事業者名,路線名,方面,曜日,対応するcsv
-    return rows.slice(1).filter(r => r.length >= 7).map(row => ({
-      route_id: row[0],
-      transportType: row[1],
-      agencyName: row[2],
-      routeName: row[3],
-      direction: row[4],
-      dayType: row[5],
-      csvFileName: row[6]
+    const docs = await loadTimetableDocs();
+    return docs.map(doc => ({
+      route_id: doc.routeId,
+      transportType: doc.transportType,
+      agencyName: doc.agencyName,
+      routeName: doc.routeName,
+      direction: doc.direction,
+      dayType: doc.dayType,
     }));
   } catch (error) {
     console.error("Failed to fetch timetable list:", error);
@@ -208,13 +160,15 @@ export async function getTimetableInfoById(routeId: string): Promise<TimetableIn
   return timetables.find(t => t.route_id === routeId);
 }
 
-// 実際の時刻表CSVデータを取得する
-export async function fetchTimetableData(csvFileName: string): Promise<string[][]> {
+// 発車時刻の表を取得する。
+// 戻り値は従来のCSVと同じ「1行目＝列名、2行目以降＝各便」の二次元配列。
+export async function fetchTimetableData(routeId: string): Promise<string[][]> {
   try {
-    const res = await fetch(`/csv/${csvFileName}`);
-    if (!res.ok) return [];
-    const text = await res.text();
-    return parseCSVRow(text);
+    const docs = await loadTimetableDocs();
+    const doc = docs.find(d => d.routeId === routeId);
+    if (!doc || doc.columns.length === 0) return [];
+    const rows = doc.departures.map(row => doc.columns.map(col => row[col] ?? ''));
+    return [doc.columns, ...rows];
   } catch (error) {
     console.error("Failed to fetch timetable data:", error);
     return [];

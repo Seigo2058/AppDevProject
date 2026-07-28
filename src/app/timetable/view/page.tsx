@@ -61,7 +61,7 @@ function TimetableViewContent() {
 
       if (info) {
         setCurrentInfo(info);
-        const data = await fetchTimetableData(info.csvFileName);
+        const data = await fetchTimetableData(info.route_id);
 
         const stops = await getRouteStopsById(info.route_id);
         setOriginStop(stops.length > 0 ? stops[0] : '');

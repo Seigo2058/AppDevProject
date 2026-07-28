@@ -56,7 +56,9 @@
 
 ## 3. 時刻表データを Firestore に投入する
 
-`public/csv` の CSV が投入元、Firestore がアプリの唯一のデータソース。CSV を更新したら投入し直す。
+`data/csv` の CSV が投入元、Firestore がアプリの唯一のデータソース。CSV を更新したら投入し直す。
+
+CSV は `public/` ではなく `data/` に置いてある。アプリは実行時に CSV を読まないので配信する必要がなく、`public/` にあるとデプロイ先で誰でも取得できてしまうため。
 
 1. Firebase コンソール → **プロジェクトの設定 → サービス アカウント → 「新しい秘密鍵の生成」**
 2. ダウンロードした JSON をリポジトリ直下に `serviceAccountKey.json` として置く（`.gitignore` 済み）

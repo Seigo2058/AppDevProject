@@ -429,7 +429,7 @@ export default function SchedulePage() {
                 </h2>
                 <button
                   onClick={() => handleSetIsEditing(true)}
-                  className="text-[11px] font-bold cursor-pointer"
+                  className="text-[13px] font-bold cursor-pointer"
                   style={{ color: ACCENT }}
                 >
                   編集する

@@ -4,7 +4,7 @@ import { getDb } from "@/lib/firebase";
 /**
  * Firestore に置いた時刻表データの読み込み。
  *
- * データ構造（scripts/seed-firestore.mjs が public/csv から投入する）:
+ * データ構造（scripts/seed-firestore.mjs が data/csv から投入する）:
  *
  *   timetables/{route_id}
  *     transportType, agencyName, routeName, direction, dayType  … 路線の属性

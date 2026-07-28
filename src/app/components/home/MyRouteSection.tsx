@@ -9,12 +9,13 @@ import {
   timeToMinutes,
   SearchResultJourney
 } from "@/lib/generalRouteSearch";
-import type { SavedRoute } from "@/lib/myRoutes";
+import { setRoutePinnedToHome, type SavedRoute } from "@/lib/myRoutes";
 
 export default function MyRouteSection() {
   const [myRoutes, setMyRoutes] = useState<SavedRoute[]>([]);
   const [routeTrips, setRouteTrips] = useState<Record<string, SearchResultJourney | null>>({});
   const [loading, setLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     async function loadAndFetchRoutes() {
@@ -73,6 +74,12 @@ export default function MyRouteSection() {
     loadAndFetchRoutes();
   }, []);
 
+  // 星ボタンでホーム表示から外す。ルート自体はルート画面に残る。
+  const handleRemoveFromHome = (routeId: string) => {
+    setRoutePinnedToHome(routeId, false);
+    setMyRoutes((prev) => prev.filter((route) => route.routeId !== routeId));
+  };
+
   const getRemainingTimeText = (departureTime: string, isNextDay?: boolean): string => {
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
@@ -94,7 +101,18 @@ export default function MyRouteSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-base font-bold text-black">Myルート</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-black">Myルート</h2>
+        {myRoutes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIsEditing((prev) => !prev)}
+            className="text-[13px] font-bold text-[#a0e25e] transition-opacity hover:opacity-70 active:opacity-60"
+          >
+            {isEditing ? "完了" : "編集する"}
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-col gap-2">
         {loading ? (
@@ -128,7 +146,10 @@ export default function MyRouteSection() {
 
             return (
               <MyRouteCard
-                key={route.routeId}
+                key={`${route.routeId}-${isEditing}`}
+                routeId={route.routeId}
+                editing={isEditing}
+                onRemoveFromHome={() => handleRemoveFromHome(route.routeId)}
                 fromName={route.departure.name}
                 toName={route.destination.name}
                 departureTime={trip.departureTime}

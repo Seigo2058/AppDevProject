@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import LocationSearchModal, { LocationSearchResult } from "@/components/search/LocationSearchModal";
 import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
@@ -21,7 +22,38 @@ import MyRouteRow from "./components/MyRouteRow";
 import RouteResultCard from "./components/RouteResultCard";
 import RouteDetailView from "./components/RouteDetailView";
 
-export default function RoutesPage() {
+// タブを移動して戻ってきたときに、検索結果や開いていた画面を復元するための保存キー。
+// sessionStorage なのでブラウザタブを閉じれば消える。
+const VIEW_STATE_KEY = "routes_view_state";
+
+interface RoutesViewState {
+  view: "list" | "results" | "detail";
+  departure: BoardingSelection | null;
+  destination: BoardingSelection | null;
+  targetDate: string;
+  targetTime: string;
+  timeMode: TimeMode;
+  searchResults: SearchResultJourney[];
+  selectedJourney: SearchResultJourney | null;
+  detailOrigin: "list" | "results";
+  searchDeparture: BoardingSelection | null;
+  searchDestination: BoardingSelection | null;
+  searchDayType: "平日" | "土日・祝";
+}
+
+function RoutesPageContent() {
+  // ホームのMyルートから ?routeId= 付きで来た場合は、そのルートの詳細を直接開く
+  const requestedRouteId = useSearchParams().get("routeId");
+  const autoOpenedRouteId = useRef<string | null>(null);
+
+  // 復元した検索結果をそのまま見せるため、初回の自動再検索を1度だけ飛ばす
+  const skipAutoSearch = useRef(false);
+  // 復元処理は1回だけ（開発時のStrictModeによる二重実行で、保存し直した内容を読み戻さないため）
+  const restoreStarted = useRef(false);
+  const savedState = useRef<RoutesViewState | null>(null);
+  // 復元が終わるまでは保存しない（初期状態で上書きしてしまうのを防ぐ）
+  const [restoreDone, setRestoreDone] = useState(false);
+
   const [view, setView] = useState<"list" | "results" | "detail">("list");
 
   const [myRoutes, setMyRoutes] = useState<SavedRoute[]>([]);
@@ -53,13 +85,44 @@ export default function RoutesPage() {
   const [searchDayType, setSearchDayType] = useState<"平日" | "土日・祝">("平日");
 
   useEffect(() => {
+    // 別タブから戻ってきたときは、前回の検索条件・検索結果・開いていた画面を復元する。
+    // ?routeId= 付きで来た場合はそのルートの詳細を開くのが目的なので復元しない。
+    // 読み込みは1回だけ行い、結果をrefに持つ（StrictModeでこのeffectが2回走っても同じ結果になるようにする）。
+    if (!restoreStarted.current) {
+      restoreStarted.current = true;
+      if (!requestedRouteId) {
+        try {
+          const raw = sessionStorage.getItem(VIEW_STATE_KEY);
+          savedState.current = raw ? (JSON.parse(raw) as RoutesViewState) : null;
+        } catch (e) {
+          console.error("Failed to restore routes view state:", e);
+        }
+      }
+    }
+
+    const saved = savedState.current;
     const now = new Date();
-    setTargetDate(
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-    );
-    setTargetTime(
-      `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
-    );
+    const nowDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    setTargetDate(saved?.targetDate || nowDate);
+    setTargetTime(saved?.targetTime || nowTime);
+
+    if (saved) {
+      setView(saved.view);
+      setDeparture(saved.departure);
+      setDestination(saved.destination);
+      setTimeMode(saved.timeMode);
+      setSearchResults(saved.searchResults);
+      setSelectedJourney(saved.selectedJourney);
+      setDetailOrigin(saved.detailOrigin);
+      setSearchDeparture(saved.searchDeparture);
+      setSearchDestination(saved.searchDestination);
+      setSearchDayType(saved.searchDayType);
+      // 復元直後は結果があるので、条件変更による自動再検索を1回だけ抑止する
+      skipAutoSearch.current = saved.view === "results" && saved.searchResults.length > 0;
+    }
+    setRestoreDone(true);
 
     setMyRoutes(loadMyRoutes());
 
@@ -71,6 +134,8 @@ export default function RoutesPage() {
       ]);
     });
     getStopAgencyNames().then((map) => setStopAgencyNames(Object.fromEntries(map)));
+    // requestedRouteId はマウント時の値だけ見れば足りる（?routeId= の変化は別のeffectが処理する）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 登録済みマイルートそれぞれの直近の便を取得する(本日終了時は翌日の便)
@@ -94,6 +159,44 @@ export default function RoutesPage() {
       }
     });
   }, [myRoutes, routeTrips]);
+
+  // 画面の状態が変わるたびに保存しておき、タブを移動して戻ったときに復元できるようにする
+  useEffect(() => {
+    if (!restoreDone) return;
+    const snapshot: RoutesViewState = {
+      view,
+      departure,
+      destination,
+      targetDate,
+      targetTime,
+      timeMode,
+      searchResults,
+      selectedJourney,
+      detailOrigin,
+      searchDeparture,
+      searchDestination,
+      searchDayType,
+    };
+    try {
+      sessionStorage.setItem(VIEW_STATE_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+      console.error("Failed to persist routes view state:", e);
+    }
+  }, [
+    restoreDone,
+    view,
+    departure,
+    destination,
+    targetDate,
+    targetTime,
+    timeMode,
+    searchResults,
+    selectedJourney,
+    detailOrigin,
+    searchDeparture,
+    searchDestination,
+    searchDayType,
+  ]);
 
   const persistRoutes = (routes: SavedRoute[]) => {
     setMyRoutes(routes);
@@ -160,6 +263,11 @@ export default function RoutesPage() {
   useEffect(() => {
     if (view !== "results") return;
     if (!departure || !destination) return;
+    // 復元直後は保存済みの結果を表示したままにする（重い再検索を避ける）
+    if (skipAutoSearch.current) {
+      skipAutoSearch.current = false;
+      return;
+    }
     runSearch();
   }, [view, departure, destination, runSearch]);
 
@@ -227,6 +335,21 @@ export default function RoutesPage() {
       setSearchLoading(false);
     }
   };
+
+  // ?routeId= 付きで開かれたら、マイルートの読み込みを待って該当ルートの詳細を開く。
+  // 同じ画面で2回開かないよう、一度処理したidを覚えておく。
+  useEffect(() => {
+    if (!requestedRouteId) return;
+    if (autoOpenedRouteId.current === requestedRouteId) return;
+    const route = myRoutes.find((r) => r.routeId === requestedRouteId);
+    if (!route) return;
+    autoOpenedRouteId.current = requestedRouteId;
+    // URL（＝外部の状態）に追従して詳細を開く処理なので、effect から呼ぶ必要がある
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    handleOpenMyRoute(route);
+    // handleOpenMyRoute は毎回作り直される関数のため依存に入れない（入れると開き直しが起きる）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedRouteId, myRoutes]);
 
   const handleDeleteRoute = (routeId: string) => {
     persistRoutes(myRoutes.filter((r) => r.routeId !== routeId));
@@ -325,7 +448,7 @@ export default function RoutesPage() {
               <button
                 type="button"
                 onClick={() => setIsEditingRoutes((prev) => !prev)}
-                className="text-[13px] font-bold text-[#8dc753] transition-opacity hover:opacity-70 active:opacity-60"
+                className="text-[13px] font-bold text-[#a0e25e] transition-opacity hover:opacity-70 active:opacity-60"
               >
                 {isEditingRoutes ? "完了" : "ホームに追加・編集"}
               </button>
@@ -339,7 +462,7 @@ export default function RoutesPage() {
               <div className="flex flex-col gap-2">
                 {myRoutes.map((route) => (
                   <MyRouteRow
-                    key={route.routeId}
+                    key={`${route.routeId}-${isEditingRoutes}`}
                     route={route}
                     trip={routeTrips[route.routeId]}
                     remainingLabel={
@@ -464,5 +587,19 @@ export default function RoutesPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function RoutesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-full items-center justify-center bg-[#eee]">
+          <Loader2 size={28} className="animate-spin text-[#a0e25e]" />
+        </div>
+      }
+    >
+      <RoutesPageContent />
+    </Suspense>
   );
 }

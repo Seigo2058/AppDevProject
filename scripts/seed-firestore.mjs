@@ -1,5 +1,5 @@
 /**
- * public/csv の内容を Firestore に投入するスクリプト。
+ * data/csv の内容を Firestore に投入するスクリプト。
  *
  *   node scripts/seed-firestore.mjs            … 投入する
  *   node scripts/seed-firestore.mjs --dry-run  … 投入せず、作られるドキュメントの内容だけ表示する
@@ -20,7 +20,7 @@ import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const csvDir = join(projectRoot, "public", "csv");
+const csvDir = join(projectRoot, "data", "csv");
 const keyPath = process.env.FIREBASE_SERVICE_ACCOUNT ?? join(projectRoot, "serviceAccountKey.json");
 const dryRun = process.argv.includes("--dry-run");
 
@@ -63,9 +63,9 @@ function readCsv(fileName) {
 
 function buildTimetableDocs() {
   const listRows = readCsv("timetable_list.csv");
-  if (!listRows) throw new Error("public/csv/timetable_list.csv が見つかりません");
+  if (!listRows) throw new Error("data/csv/timetable_list.csv が見つかりません");
   const stopsRows = readCsv("route_stops_list.csv");
-  if (!stopsRows) throw new Error("public/csv/route_stops_list.csv が見つかりません");
+  if (!stopsRows) throw new Error("data/csv/route_stops_list.csv が見つかりません");
 
   // route_id → 停車順
   const stopsByRouteId = new Map();
@@ -129,7 +129,7 @@ function buildTimetableDocs() {
 
 function buildClassPeriodDocs() {
   const rows = readCsv("school_timetable.csv");
-  if (!rows) throw new Error("public/csv/school_timetable.csv が見つかりません");
+  if (!rows) throw new Error("data/csv/school_timetable.csv が見つかりません");
 
   // Header: 時間目,開始時刻,終了時刻
   return rows

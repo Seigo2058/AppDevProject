@@ -38,3 +38,17 @@ export function saveMyRoutes(routes: SavedRoute[]) {
 export function createRouteId(): string {
   return Math.random().toString(36).substring(2, 9);
 }
+
+/**
+ * ホーム画面に表示するかを設定する（ルート自体は消さない）。
+ * ホーム画面の星ボタンと、ルート画面の編集モードの星ボタンから使う。
+ */
+export function setRoutePinnedToHome(routeId: string, pinnedToHome: boolean) {
+  saveMyRoutes(
+    loadMyRoutes().map(route =>
+      route.routeId === routeId
+        ? { ...route, pinnedToHome, updatedAt: new Date().toISOString() }
+        : route
+    )
+  );
+}

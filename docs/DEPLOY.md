@@ -26,6 +26,11 @@
    - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
    - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
    - `NEXT_PUBLIC_FIREBASE_APP_ID`
+
+   > **落とし穴**: 登録時に **Production スコープにチェックを入れる**こと。Development だけだと本番ビルドに値が入らず、デプロイは成功するのにデータが出ない状態になる。
+   >
+   > また `NEXT_PUBLIC_*` は**ビルド時にコードへ埋め込まれる**ため、環境変数を後から追加・変更した場合は **Deployments → 最新 → Redeploy**（Use existing Build Cache のチェックは外す）が必要。値を入れただけでは反映されない。
+
 5. **Deploy** を押す。数分で `https://<プロジェクト名>.vercel.app` が発行される
 
 以降は `main` に push（PR をマージ）するたびに自動で本番デプロイされる。

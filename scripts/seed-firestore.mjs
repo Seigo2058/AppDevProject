@@ -169,7 +169,15 @@ async function main() {
     );
   }
 
-  initializeApp({ cert: cert(JSON.parse(readFileSync(keyPath, "utf8"))) });
+  const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
+  if (!serviceAccount.project_id) {
+    throw new Error(
+      `${keyPath} に project_id がありません。Firebase コンソールの「サービス アカウント」から生成した鍵か確認してください。`
+    );
+  }
+
+  initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id });
+  console.log(`\nプロジェクト ${serviceAccount.project_id} に書き込みます...`);
   const db = getFirestore();
 
   const batch = db.batch();

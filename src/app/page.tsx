@@ -1,6 +1,7 @@
 import GreetingHeader from "./components/home/GreetingHeader";
 import TodayScheduleSection from "./components/home/TodayScheduleSection";
 import MyRouteSection from "./components/home/MyRouteSection";
+import RegisteredTimesSection from "./components/home/RegisteredTimesSection";
 
 export default function Home() {
   return (
@@ -8,6 +9,7 @@ export default function Home() {
       <GreetingHeader />
       <TodayScheduleSection />
       <MyRouteSection />
+      <RegisteredTimesSection />
     </div>
   );
 }

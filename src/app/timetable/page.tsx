@@ -1,18 +1,27 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Search, BusFront, ChevronRight, Trash2 } from 'lucide-react';
-import { getFavoriteRoutes, getTimetableInfoById, removeFavoriteRoute, TimetableInfo } from '@/lib/timetableData';
+import { Search, BusFront } from 'lucide-react';
+import {
+  getFavoriteRoutes,
+  getTimetableInfoById,
+  removeFavoriteRoute,
+  toggleFavoritePinned,
+  TimetableInfo,
+} from '@/lib/timetableData';
+import FavoriteTimetableRow from './components/FavoriteTimetableRow';
 
 const ACCENT = "#a0e25e";
 
-// TransitAPI/CSVのどちらも運賃・乗換回数を返さないため、Figmaデザインの見た目を
-// 再現する目的の仮値。実データ連携が決まり次第、実際の値に差し替える。
-const DUMMY_FARE = 250;
-const DUMMY_TRANSFER_COUNT = 0;
+interface FavoriteRow {
+  info: TimetableInfo;
+  stopName: string;
+  /** ホーム画面の「登録時刻」に表示するか */
+  pinnedToHome: boolean;
+}
 
 export default function TimetableTopPage() {
-  const [favorites, setFavorites] = useState<{ info: TimetableInfo; stopName: string }[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -25,7 +34,7 @@ export default function TimetableTopPage() {
         return;
       }
 
-      const favs: { info: TimetableInfo; stopName: string }[] = [];
+      const favs: FavoriteRow[] = [];
       // 登録は曜日を区別しないため、同じ路線・方面・停留所は1件にまとめる
       // （曜日別に登録された古いデータが残っていても重複表示しない）。
       const seen = new Set<string>();
@@ -35,7 +44,8 @@ export default function TimetableTopPage() {
         const key = `${info.routeName}|${info.direction}|${item.stopName}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        favs.push({ info, stopName: item.stopName });
+        // pinnedToHome を持たない既存データは表示扱い（MYルートと同じ扱い）
+        favs.push({ info, stopName: item.stopName, pinnedToHome: item.pinnedToHome !== false });
       }
       setFavorites(favs);
       setLoading(false);
@@ -43,17 +53,25 @@ export default function TimetableTopPage() {
     loadFavorites();
   }, []);
 
-  const handleRemove = async (routeId: string, stopName: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleRemove = async (routeId: string, stopName: string) => {
     await removeFavoriteRoute(routeId, stopName);
     setFavorites(prev => prev.filter(f => !(f.info.route_id === routeId && f.stopName === stopName)));
   };
 
+  // ホーム画面の「登録時刻」に出すかを切り替える（MYルートの星と同じ操作）
+  const handleTogglePin = async (routeId: string, stopName: string) => {
+    const pinned = await toggleFavoritePinned(routeId, stopName);
+    setFavorites(prev =>
+      prev.map(f =>
+        f.info.route_id === routeId && f.stopName === stopName ? { ...f, pinnedToHome: pinned } : f
+      )
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#eee]">
-      <div className="max-w-2xl mx-auto px-4 pt-6 pb-8 space-y-6">
-        <h1 className="text-[20px] font-bold text-black">時刻表検索</h1>
+      <div className="max-w-2xl mx-auto px-4 pt-4 pb-8 space-y-6">
+        <h1 className="text-[24px] font-bold text-black">時刻表検索</h1>
 
         <Link href="/timetable/search" className="block w-full">
           <div className="w-full h-11 bg-white rounded-lg flex items-center gap-2 px-3 cursor-pointer transition-colors hover:bg-[#ebebeb] active:bg-[#e0e0e0]">
@@ -71,7 +89,7 @@ export default function TimetableTopPage() {
                 className="cursor-pointer text-[13px] font-bold transition-opacity hover:opacity-70 active:opacity-60"
                 style={{ color: ACCENT }}
               >
-                {isEditing ? "完了" : "編集"}
+                {isEditing ? "完了" : "ホームに追加・編集"}
               </button>
             )}
           </div>
@@ -90,46 +108,15 @@ export default function TimetableTopPage() {
           ) : (
             <div className="space-y-2">
               {favorites.map((fav, index) => (
-                <Link
-                  key={`${fav.info.route_id}-${fav.stopName}-${index}`}
-                  href={`/timetable/view?route_id=${fav.info.route_id}&stop_name=${encodeURIComponent(fav.stopName)}`}
-                  className="block bg-[#fafafa] rounded-lg px-4 py-3 flex items-center gap-2 transition-colors hover:bg-[#e6e6e6] active:bg-[#dcdcdc]"
-                >
-                  <div className="flex-1 flex flex-col gap-1 min-w-0">
-                    <div className="flex items-center gap-1 text-[10px] text-black/70 flex-wrap">
-                      <span>{fav.stopName}</span>
-                      <span>から</span>
-                      <span>{fav.info.direction}</span>
-                      <span>方面</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0"
-                        style={{ color: ACCENT, borderColor: ACCENT, backgroundColor: `${ACCENT}1a` }}
-                      >
-                        {fav.info.transportType}
-                      </span>
-                      <span className="text-xs text-black/50 font-medium truncate">{fav.info.agencyName}</span>
-                    </div>
-                    <p className="text-base font-bold text-black leading-tight truncate">{fav.info.routeName}</p>
-                    <div className="flex items-center gap-2 text-[11px] text-black">
-                      <span className="font-bold">{DUMMY_FARE}円</span>
-                      <span className="text-black/20">|</span>
-                      <span>{DUMMY_TRANSFER_COUNT > 0 ? `乗換${DUMMY_TRANSFER_COUNT}回` : "乗換無"}</span>
-                    </div>
-                  </div>
-                  {isEditing ? (
-                    <button
-                      onClick={(e) => handleRemove(fav.info.route_id, fav.stopName, e)}
-                      className="p-1.5 text-black/30 hover:text-red-500 rounded-lg transition-colors shrink-0 cursor-pointer"
-                      title="お気に入り解除"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-black/30 shrink-0" />
-                  )}
-                </Link>
+                <FavoriteTimetableRow
+                  key={`${fav.info.route_id}-${fav.stopName}-${index}-${isEditing}`}
+                  info={fav.info}
+                  stopName={fav.stopName}
+                  pinnedToHome={fav.pinnedToHome}
+                  editing={isEditing}
+                  onDelete={() => handleRemove(fav.info.route_id, fav.stopName)}
+                  onTogglePin={() => handleTogglePin(fav.info.route_id, fav.stopName)}
+                />
               ))}
             </div>
           )}

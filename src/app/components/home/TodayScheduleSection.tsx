@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BusFront, GraduationCap, LucideIcon } from "lucide-react";
 import {
   ClassPeriod,
   BoardingSelection,
+  CommuteLeg,
   DayPlan,
   days,
   dayFullNames,
@@ -26,6 +28,9 @@ interface Leg {
   placeName: string;
   agencyName: string;
   departureTime: string;
+  /** 道のり詳細画面に渡す情報 */
+  direction: "outbound" | "inbound";
+  commuteLeg: CommuteLeg;
 }
 
 function loadBoardingSelection(): BoardingSelection | null {
@@ -69,6 +74,8 @@ function buildLegs(plan: DayPlan, boardingName: string): Leg[] {
         ? "スクール便"
         : formatRouteLabel(plan.outbound.routeName || "路線バス"),
       departureTime: plan.outbound.departureTime,
+      direction: "outbound" as const,
+      commuteLeg: plan.outbound,
     },
     plan.inbound && {
       label: "帰り",
@@ -78,6 +85,8 @@ function buildLegs(plan: DayPlan, boardingName: string): Leg[] {
         ? "スクール便"
         : formatRouteLabel(plan.inbound.routeName || "路線バス"),
       departureTime: plan.inbound.departureTime,
+      direction: "inbound" as const,
+      commuteLeg: plan.inbound,
     },
   ]
     .filter((leg) => !!leg)
@@ -90,6 +99,7 @@ interface TodayScheduleSectionProps {
 }
 
 export default function TodayScheduleSection({ title = "My時間割ルート" }: TodayScheduleSectionProps) {
+  const router = useRouter();
   const [scheduleData, setScheduleData] = useState<{
     periods: ClassPeriod[];
   } | null>(null);
@@ -180,6 +190,16 @@ export default function TodayScheduleSection({ title = "My時間割ルート" }:
     };
   }, [isLoading, scheduleData, boarding, schedule, today]);
 
+  // カードから道のり詳細（ルート詳細）へ。時間割ページと同じくsessionStorage経由で渡す。
+  const openJourneyDetail = (dayStr: string, leg: Leg, boardingName: string) => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem(
+      "commute_journey_detail",
+      JSON.stringify({ day: dayStr, direction: leg.direction, leg: leg.commuteLeg, boardingName })
+    );
+    router.push("/schedule/journey");
+  };
+
   // 表示すべき「次に乗る便」を選ぶ。undefined は計算待ち、null は該当便なしを表す。
   function selectTarget() {
     if (!boarding) return null;
@@ -254,13 +274,18 @@ export default function TodayScheduleSection({ title = "My時間割ルート" }:
     }
 
     const { dayStr, offset, plan, leg } = target;
+    const boardingName = boarding.name;
     const periodBadge =
       plan.minPeriod === plan.maxPeriod
         ? `${plan.minPeriod}限`
         : `${plan.minPeriod}限〜${plan.maxPeriod}限`;
 
     return (
-      <div className="bg-[#fafafa] rounded-lg p-4 flex flex-col gap-4">
+      <button
+        type="button"
+        onClick={() => openJourneyDetail(dayStr, leg, boardingName)}
+        className="w-full bg-[#fafafa] rounded-lg p-4 flex flex-col gap-4 text-left transition-colors hover:bg-[#e6e6e6] active:bg-[#dcdcdc]"
+      >
         <div className="flex items-start justify-between gap-4">
           <p className="text-base font-bold text-black whitespace-nowrap">{dayFullNames[dayStr]}</p>
           <div className="flex items-center justify-end gap-4 flex-wrap">
@@ -286,7 +311,7 @@ export default function TodayScheduleSection({ title = "My時間割ルート" }:
           departureTime={leg.departureTime}
           dayOffset={offset}
         />
-      </div>
+      </button>
     );
   }
 }

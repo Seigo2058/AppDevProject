@@ -10,6 +10,20 @@ body {
   color: var(--foreground);
 }
 
+/*
+ * iOS Safari は入力欄のフォントサイズが16px未満だと、フォーカス時に画面を自動で
+ * 拡大する（戻す操作が必要になり操作感が悪い）。iOSでだけ16pxに引き上げて拡大を防ぐ。
+ * -webkit-touch-callout はWebKit（iOS Safari/iOS Chrome）でのみ有効なので、
+ * デスクトップやAndroidの見た目は変えずに済む。
+ */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* iOSのセーフエリア用 */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe {

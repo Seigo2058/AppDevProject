@@ -178,6 +178,11 @@ export async function fetchTimetableData(routeId: string): Promise<string[][]> {
 export interface FavoriteItem {
   routeId: string;
   stopName: string;
+  /**
+   * ホーム画面の「登録時刻」に表示するか。時刻表画面の編集モードの星で切り替える。
+   * pinnedToHome を持たない既存データは、従来どおり表示されるよう未指定＝表示とみなす。
+   */
+  pinnedToHome?: boolean;
 }
 
 // route_id は「路線＋方面＋曜日」単位だが、登録は曜日を区別しない。
@@ -208,14 +213,33 @@ export async function saveFavoriteRoute(routeId: string, stopName: string) {
     getRepresentativeRouteId(routeId),
     getSameLineRouteIds(routeId),
   ]);
+  const current = getFavoriteRoutes();
+  const matches = (f: FavoriteItem) => sameLineIds.includes(f.routeId) && f.stopName === stopName;
+  // 一度ホームから外した登録を再登録で勝手に戻さないよう、既存の設定を引き継ぐ。
+  const existing = current.find(matches);
   // 曜日違いで重複登録されないよう、同じ路線・方面の既存分を代表1件に置き換える。
-  const others = getFavoriteRoutes().filter(
-    f => !(sameLineIds.includes(f.routeId) && f.stopName === stopName)
-  );
+  const others = current.filter(f => !matches(f));
   localStorage.setItem(
     'favoriteRoutesV2',
-    JSON.stringify([...others, { routeId: representative, stopName }])
+    JSON.stringify([
+      ...others,
+      { routeId: representative, stopName, pinnedToHome: existing?.pinnedToHome ?? true },
+    ])
   );
+}
+
+/** ホーム表示のオン・オフを切り替え、切り替え後の状態を返す。 */
+export async function toggleFavoritePinned(routeId: string, stopName: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const sameLineIds = await getSameLineRouteIds(routeId);
+  let pinned = true;
+  const updated = getFavoriteRoutes().map(f => {
+    if (!(sameLineIds.includes(f.routeId) && f.stopName === stopName)) return f;
+    pinned = f.pinnedToHome === false;
+    return { ...f, pinnedToHome: pinned };
+  });
+  localStorage.setItem('favoriteRoutesV2', JSON.stringify(updated));
+  return pinned;
 }
 
 export async function removeFavoriteRoute(routeId: string, stopName: string) {

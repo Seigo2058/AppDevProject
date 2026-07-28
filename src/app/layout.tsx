@@ -6,8 +6,8 @@ import BottomNav from "@/components/BottomNav";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "通学ナビ",
-  description: "学生向け通学・時刻表サポートアプリ",
+  title: "パッと見通学",
+  description: "北海道情報大学の学生向け通学・時刻表サポートアプリ",
 };
 
 export default function RootLayout({

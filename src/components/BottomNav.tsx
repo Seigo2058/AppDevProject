@@ -15,6 +15,13 @@ const navItems = [
 // タブごとに「最後に開いていたURL」を覚えるキー
 const LAST_URL_KEY = 'tab_last_url';
 
+/**
+ * 表示中のタブをもう一度押したときに発火するイベント。
+ * URLだけでは戻せない画面内の状態（ルート画面の検索結果・詳細表示など）を、
+ * 各ページ側でトップに戻すために使う。detail には対象タブのパスが入る。
+ */
+export const TAB_ROOT_RESET_EVENT = 'tab-root-reset';
+
 /** パスがどのタブに属するかを返す（/timetable/view → /timetable）。 */
 function sectionOf(pathname: string): string {
   const matched = navItems
@@ -52,7 +59,9 @@ export default function BottomNav() {
   }, [pathname, searchParams, currentSection]);
 
   return (
-    <nav className="shrink-0 min-h-16 bg-white border-t border-gray-200 flex justify-around items-center pb-safe shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+    // 背景（白帯）は画面幅いっぱい、アイコンの並びはコンテンツと同じ600pxに揃える
+    <nav className="shrink-0 min-h-16 bg-white border-t border-gray-200 flex justify-center pb-safe shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+      <div className="flex w-full max-w-[600px] justify-around items-center">
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = currentSection === item.href;
@@ -63,7 +72,14 @@ export default function BottomNav() {
             onClick={(e) => {
               // 表示中のタブをもう一度押したときはトップへ（深い階層からの脱出用）。
               // 別タブへ移るときは、そのタブで最後に開いていた画面に戻す。
-              if (isActive) return;
+              if (isActive) {
+                // 同じURLのままページ内で画面を切り替えているタブ（ルート画面など）は
+                // 遷移が起きないため、イベントでトップ表示に戻すよう伝える。
+                window.dispatchEvent(
+                  new CustomEvent(TAB_ROOT_RESET_EVENT, { detail: item.href })
+                );
+                return;
+              }
               const lastUrl = readLastUrl(item.href);
               if (lastUrl && lastUrl !== item.href) {
                 e.preventDefault();
@@ -79,6 +95,7 @@ export default function BottomNav() {
           </Link>
         );
       })}
+      </div>
     </nav>
   );
 }

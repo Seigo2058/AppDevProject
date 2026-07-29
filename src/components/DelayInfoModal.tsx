@@ -21,7 +21,7 @@ export default function DelayInfoModal({ open, onClose }: DelayInfoModalProps) {
 
   return (
     // 画面全体（下部アクションバー・タブバーを含む）を覆う。Figmaでは #8a8a8a 40%。
-    <div className="fixed inset-0 z-40 bg-[#8a8a8a]/40">
+    <div className="fixed inset-0 z-40 mx-auto max-w-[600px] bg-[#8a8a8a]/40">
       {/* 背景タップで閉じる。パネルは上に重ねる。 */}
       <button type="button" aria-label="閉じる" onClick={onClose} className="absolute inset-0 size-full" />
 

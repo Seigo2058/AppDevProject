@@ -94,7 +94,14 @@ export default function RouteJourneyDetail({
           <DepartureIcon size={14} className="shrink-0" />
           <span className="truncate text-sm font-bold">{departureStop}</span>
         </div>
-        <span className="shrink-0 text-xs text-black/30">▶</span>
+        {/*
+          「▶」(U+25B6) はiOSで絵文字（▶️）として描画されてしまうため、
+          文字ではなくCSSの三角形で描く（他画面の矢印と同じ作り）。
+        */}
+        <span
+          aria-hidden="true"
+          className="h-[10px] w-[8px] shrink-0 bg-black/30 [clip-path:polygon(0%_0%,100%_50%,0%_100%)]"
+        />
         <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 text-black">
           <ArrivalIcon size={14} className="shrink-0" />
           <span className="truncate text-sm font-bold">{arrivalStop}</span>
@@ -142,19 +149,19 @@ export default function RouteJourneyDetail({
             return (
               <div key={`${waypoint.name}-${index}`}>
                 {/* 地点 */}
-                <div className="grid grid-cols-[52px_16px_1fr] gap-x-3">
+                <div className="grid grid-cols-[64px_16px_1fr] gap-x-3">
                   <div className="flex flex-col items-start">
                     {waypoint.arrivalTime && waypoint.departureTime ? (
                       <>
-                        <span className="text-[11px] leading-5 text-black/50">
+                        <span className="whitespace-nowrap text-[11px] leading-5 text-black/50">
                           {waypoint.arrivalTime}着
                         </span>
-                        <span className="text-sm font-bold leading-5 text-black">
+                        <span className="whitespace-nowrap text-sm font-bold leading-5 text-black">
                           {waypoint.departureTime}発
                         </span>
                       </>
                     ) : (
-                      <span className="text-sm font-bold leading-5 text-black">
+                      <span className="whitespace-nowrap text-sm font-bold leading-5 text-black">
                         {waypoint.arrivalTime ?? waypoint.departureTime}
                       </span>
                     )}
@@ -201,7 +208,7 @@ export default function RouteJourneyDetail({
 
                 {/* 区間 */}
                 {segment && Icon && (
-                  <div className="grid grid-cols-[52px_16px_1fr] gap-x-3">
+                  <div className="grid grid-cols-[64px_16px_1fr] gap-x-3">
                     <div className="py-2 text-[11px] leading-5 text-black/60">
                       {timeDifferenceMinutes(segment.departureTime, segment.arrivalTime)}分
                     </div>

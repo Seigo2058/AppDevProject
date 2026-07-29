@@ -150,7 +150,7 @@ export default function LocationSearchModal({
   const showPinned = keyword.trim() === "" && pinned.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex flex-col">
+    <div className="fixed inset-0 z-[60] mx-auto max-w-[600px] bg-black/40 flex flex-col">
       <div className="bg-[#eee] flex flex-col flex-1 pt-[env(safe-area-inset-top)] overflow-hidden">
         <div className="flex items-center gap-3 px-4 pt-4 pb-2 shrink-0">
           <button

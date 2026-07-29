@@ -213,7 +213,7 @@ export default function DateTimePickerSheet({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-[600px] flex-col justify-end">
       <button
         type="button"
         aria-label="閉じる"

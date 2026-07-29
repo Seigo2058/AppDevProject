@@ -16,6 +16,7 @@ import {
 } from "@/lib/generalRouteSearch";
 import type { BoardingSelection } from "@/lib/schedule";
 import { createRouteId, loadMyRoutes, saveMyRoutes, SavedRoute } from "@/lib/myRoutes";
+import { TAB_ROOT_RESET_EVENT } from "@/components/BottomNav";
 import RouteSearchForm from "./components/RouteSearchForm";
 import DateTimePickerSheet, { TimeMode } from "./components/DateTimePickerSheet";
 import MyRouteRow from "./components/MyRouteRow";
@@ -335,6 +336,18 @@ function RoutesPageContent() {
       setSearchLoading(false);
     }
   };
+
+  // メニューバーで表示中の「ルート」タブをもう一度押されたら、検索結果や詳細を閉じてトップに戻す
+  useEffect(() => {
+    const handleTabReset = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== "/routes") return;
+      setView("list");
+      setSelectedJourney(null);
+      setSearchError("");
+    };
+    window.addEventListener(TAB_ROOT_RESET_EVENT, handleTabReset);
+    return () => window.removeEventListener(TAB_ROOT_RESET_EVENT, handleTabReset);
+  }, []);
 
   // ?routeId= 付きで開かれたら、マイルートの読み込みを待って該当ルートの詳細を開く。
   // 同じ画面で2回開かないよう、一度処理したidを覚えておく。

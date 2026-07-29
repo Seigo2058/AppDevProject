@@ -14,7 +14,6 @@ import {
   getDaySchedule,
   getComputedScheduleCache,
   setComputedScheduleCache,
-  formatRouteLabel,
   timeToMinutes,
 } from "@/lib/schedule";
 import RouteLegCard from "./RouteLegCard";
@@ -72,7 +71,7 @@ function buildLegs(plan: DayPlan, boardingName: string): Leg[] {
       placeName: boardingName,
       agencyName: plan.outbound.isSchoolBus
         ? "スクール便"
-        : formatRouteLabel(plan.outbound.routeName || "路線バス"),
+        : plan.outbound.routeName || "路線バス",
       departureTime: plan.outbound.departureTime,
       direction: "outbound" as const,
       commuteLeg: plan.outbound,
@@ -83,7 +82,7 @@ function buildLegs(plan: DayPlan, boardingName: string): Leg[] {
       placeName: plan.inbound.stopLabel,
       agencyName: plan.inbound.isSchoolBus
         ? "スクール便"
-        : formatRouteLabel(plan.inbound.routeName || "路線バス"),
+        : plan.inbound.routeName || "路線バス",
       departureTime: plan.inbound.departureTime,
       direction: "inbound" as const,
       commuteLeg: plan.inbound,

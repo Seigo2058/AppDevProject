@@ -29,7 +29,7 @@ export default function DetailActionBar({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-16 z-30 flex items-center gap-4 bg-[#eee] px-6 py-2">
+      <div className="fixed inset-x-0 bottom-16 z-30 mx-auto flex max-w-[600px] items-center gap-4 bg-[#eee] px-6 py-2">
         <button
           type="button"
           onClick={() => setIsDelayModalOpen(true)}

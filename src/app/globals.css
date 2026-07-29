@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3f4f6; /* グレー100 */
+  --background: #eee; /* アプリの背景色。600pxを超える余白部分もこの色で埋める */
   --foreground: #111827; /* グレー900 */
 }
 

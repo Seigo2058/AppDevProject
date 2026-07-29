@@ -19,8 +19,12 @@ export default function RootLayout({
   return (
     <html lang="ja" className="h-full antialiased">
       <body className={`${inter.className} h-full flex flex-col`}>
-        <main className="flex-1 overflow-x-hidden overflow-y-auto">
-          {children}
+        {/*
+          スマートフォン向けの画面設計のため、コンテンツは600pxを超えて広げず中央寄せにする。
+          背景（body・mainの色）は画面幅いっぱいに広がる。
+        */}
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-[#eee]">
+          <div className="mx-auto w-full max-w-[600px]">{children}</div>
         </main>
         {/* BottomNav は useSearchParams を使うため Suspense で包む（静的生成の要件） */}
         <Suspense fallback={<div className="shrink-0 min-h-16 border-t border-gray-200 bg-white" />}>

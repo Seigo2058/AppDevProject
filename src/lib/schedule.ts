@@ -154,25 +154,6 @@ export function setComputedScheduleCache(
   }
 }
 
-const ROUTE_SEGMENT_MAX_LENGTH = 5;
-const ROUTE_SEGMENT_VISIBLE_COUNT = 2;
-
-function truncateRouteSegment(name: string): string {
-  return name.length > ROUTE_SEGMENT_MAX_LENGTH ? `${name.slice(0, ROUTE_SEGMENT_MAX_LENGTH)}…` : name;
-}
-
-// 乗換込みの路線名（"路線A → 路線B" 形式）をカード幅に収まるよう省略する。
-// 乗換が無い（区間が1件のみの）場合は省略せずそのまま表示する。
-// 乗換がある場合、各路線名は最大5文字+"…"、3件以上ある場合は3件目以降を"→…"にまとめる。
-// ホーム画面・時間割画面のどちらのカードでも同じ表記になるよう、ここに集約する。
-export function formatRouteLabel(routeName: string): string {
-  const segments = routeName.split(" → ").map((s) => s.trim()).filter(Boolean);
-  if (segments.length <= 1) return routeName;
-
-  const visible = segments.slice(0, ROUTE_SEGMENT_VISIBLE_COUNT).map(truncateRouteSegment);
-  return segments.length > ROUTE_SEGMENT_VISIBLE_COUNT ? `${visible.join(" → ")}→…` : visible.join(" → ");
-}
-
 // タイムアウト付きのフェッチヘルパー
 export async function fetchWithTimeout(url: string, ms = 8000) {
   const controller = new AbortController();

@@ -14,7 +14,6 @@ import {
   getDaySchedule,
   getComputedScheduleCache,
   setComputedScheduleCache,
-  formatRouteLabel,
 } from "@/lib/schedule";
 import { getCsvCoverageStops, getStopAgencyNames } from "@/lib/tripGraph";
 import { findCsvStopNameByEndpoint } from "@/lib/stopRegistry";
@@ -75,9 +74,10 @@ function LegCard({
       </div>
       <div className="flex-1 flex flex-col items-center justify-center gap-1.5 self-stretch pt-3 min-w-0">
         <div className="w-full border-t border-dashed border-black/20" />
-        <div className="flex items-center gap-1 text-black/60 text-[10px] whitespace-nowrap">
-          <BusFront size={13} />
-          <span>{centerLabel}</span>
+        {/* 路線名は左右の時刻に被らないよう、幅に収まらない場合だけ省略する */}
+        <div className="flex w-full min-w-0 items-center justify-center gap-1 text-black/60 text-[10px]">
+          <BusFront size={13} className="shrink-0" />
+          <span className="truncate">{centerLabel}</span>
         </div>
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -122,7 +122,7 @@ function LegSection({
             rightTime={leg.arrivalTime}
             rightName={leg.stopLabel}
             RightIcon={GraduationCap}
-            centerLabel={leg.isSchoolBus ? "スクール便" : formatRouteLabel(leg.routeName || "バス")}
+            centerLabel={leg.isSchoolBus ? "スクール便" : leg.routeName || "バス"}
             onClick={() => onOpenDetail(leg)}
           />
         ) : (
@@ -135,7 +135,7 @@ function LegSection({
             rightTime={leg.arrivalTime}
             rightName={boardingName}
             RightIcon={MapPin}
-            centerLabel={leg.isSchoolBus ? "スクール便" : formatRouteLabel(leg.routeName || "バス")}
+            centerLabel={leg.isSchoolBus ? "スクール便" : leg.routeName || "バス"}
             onClick={() => onOpenDetail(leg)}
           />
         )

@@ -1,36 +1,38 @@
-これは [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app) でブートストラップされた [Next.js](https://nextjs.org) プロジェクトです。
+# パッと見通学
 
-## はじめに
+北海道情報大学の学生向け 通学・時刻表サポートアプリ（Next.js 16 App Router / TypeScript / Tailwind CSS v4 / Firestore）。
 
-まず、開発サーバーを実行します：
+## セットアップ
+
+前提: Node.js 20.9 以上、npm（`package-lock.json` 管理。pnpm / yarn は不可）
 
 ```bash
-npm run dev
-# または
-yarn dev
-# または
-pnpm dev
-# または
-bun dev
+npm install
+npm run dev   # http://localhost:3000
 ```
 
-ブラウザで [http://localhost:3000](http://localhost:3000) を開いて結果を確認します。
+時刻表・停留所・時限のデータは Firestore から読み込みます。同梱の `.env.local` があればそのまま動きます。無い場合は `.env.example` をコピーして `NEXT_PUBLIC_FIREBASE_*` を設定してください（未設定でも画面は開きますが、データは空になります）。
 
-`app/page.tsx` を変更することでページの編集を開始できます。ファイルを編集するとページは自動的に更新されます。
+Firestore が空の場合は `data/csv` の CSV を投入します（サービスアカウント鍵を配置して `npm run seed`。詳細は [`docs/DEPLOY.md`](docs/DEPLOY.md)）。
 
-このプロジェクトは、Vercelの新しいフォントファミリーである [Geist](https://vercel.com/font) を自動的に最適化して読み込むために [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) を使用しています。
+## コマンド
 
-## さらに学ぶ
+| コマンド | 内容 |
+| --- | --- |
+| `npm run dev` | 開発サーバー |
+| `npm run build` / `npm run start` | 本番ビルド / 起動 |
+| `npm run lint` | ESLint |
+| `npm run seed` | `data/csv` を Firestore へ投入（`-- --dry-run` で確認のみ） |
 
-Next.jsについてさらに学ぶには、以下のリソースを参照してください：
+## 構成
 
-- [Next.js ドキュメント](https://nextjs.org/docs) - Next.jsの機能とAPIについて学ぶ。
-- [Learn Next.js](https://nextjs.org/learn) - インタラクティブなNext.jsチュートリアル。
+| パス | 内容 |
+| --- | --- |
+| `src/app` | 画面（ホーム / 時間割 / ルート / 時刻表） |
+| `src/components` | 画面をまたぐ共通コンポーネント |
+| `src/lib` | Firestore アクセス、経路探索、時刻表・時間割のロジック |
+| `data/csv` | Firestore への投入元データ（実行時には読みません） |
+| `scripts/seed-firestore.mjs` | 投入スクリプト |
+| `docs/DEPLOY.md` | Vercel / Firebase へのデプロイ手順 |
 
-[Next.jsのGitHubリポジトリ](https://github.com/vercel/next.js) も確認できます - フィードバックや貢献を歓迎します！
-
-## Vercelにデプロイ
-
-Next.jsアプリをデプロイする最も簡単な方法は、Next.jsの作成者による [Vercelプラットフォーム](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) を使用することです。
-
-詳細については、[Next.jsデプロイメントドキュメント](https://nextjs.org/docs/app/building-your-application/deploying) を確認してください。
+スマートフォン向けの画面設計です（幅 600px を超える環境では中央寄せ表示）。

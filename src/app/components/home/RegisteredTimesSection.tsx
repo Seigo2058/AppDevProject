@@ -24,8 +24,8 @@ interface RegisteredTime {
   routeId: string;
   stopName: string;
   info: TimetableInfo;
-  /** 路線の終点（カード1段目の「〇〇 → 〇〇」の右側） */
-  terminalStop: string;
+  /** 乗車する停留所の次の停留所（カード1段目の「〇〇 ▶ 〇〇」の右側） */
+  nextStop: string;
   /** これから発車する時刻（早い順） */
   upcoming: string[];
   /** 本日ぶんが終わっている場合に出す翌営業日の始発 */
@@ -48,6 +48,15 @@ const REVEAL_WIDTH = 74;
  * canonicalStopName で正規化した比較も行う（これが無いとJRの登録が
  * ホームに出ない）。
  */
+/** 停車順の中から乗車停留所の次の停留所を返す。終点や見つからない場合は空文字。 */
+function findNextStop(stops: string[], stopName: string): string {
+  const target = canonicalStopName(stopName);
+  let index = stops.indexOf(stopName);
+  if (index === -1) index = stops.findIndex((s) => canonicalStopName(s) === target);
+  if (index === -1 || index === stops.length - 1) return "";
+  return stops[index + 1];
+}
+
 function findStopColumn(columns: string[], stopName: string): number {
   const exactDeparture = columns.indexOf(`${stopName}発`);
   if (exactDeparture !== -1) return exactDeparture;
@@ -117,7 +126,7 @@ export default function RegisteredTimesSection() {
               routeId: info.route_id,
               stopName: favorite.stopName,
               info,
-              terminalStop: stops.length > 0 ? stops[stops.length - 1] : "",
+              nextStop: findNextStop(stops, favorite.stopName),
               upcoming: times
                 .filter((time) => timeToMinutes(time) >= nowMinutes)
                 .slice(0, UPCOMING_COUNT),
@@ -205,11 +214,12 @@ export default function RegisteredTimesSection() {
                     <span className="truncate text-base font-bold leading-4 text-black">
                       {item.stopName}
                     </span>
-                    {item.terminalStop && (
+                    {item.nextStop && (
                       <>
                         <span className="h-[10px] w-[9px] shrink-0 bg-[#d9d9d9] [clip-path:polygon(0%_0%,100%_50%,0%_100%)]" />
-                        <span className="truncate text-base font-bold leading-4 text-black">
-                          {item.terminalStop}
+                        {/* 次の停留所は乗車する停留所より控えめに見せるため灰色にする */}
+                        <span className="truncate text-sm font-bold leading-4 text-[#646464]">
+                          {item.nextStop}
                         </span>
                       </>
                     )}

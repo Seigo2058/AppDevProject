@@ -269,13 +269,16 @@ function TimetableViewContent() {
 
             {/* 右端の時刻インデックス */}
             {scheduleByHour.length > 1 && (
-              <div className="fixed inset-x-0 bottom-32 z-10 mx-auto flex max-w-[600px] flex-col items-end pr-1">
+              // 600px幅の枠は右端に数字を寄せるためだけのもの。そのままだと画面の大部分を
+              // 覆ってスクロール操作を奪ってしまうので、枠自体はポインタ操作を透過させ、
+              // 数字のボタンだけ押せるようにする。
+              <div className="pointer-events-none fixed inset-x-0 bottom-32 z-10 mx-auto flex max-w-[600px] flex-col items-end pr-1">
                 {scheduleByHour.map((group) => (
                   <button
                     key={group.hour}
                     type="button"
                     onClick={() => handleHourIndexClick(group.hour)}
-                    className="px-1 text-[10px] font-bold leading-4 text-[#010101] active:opacity-60"
+                    className="pointer-events-auto px-1 text-[10px] font-bold leading-4 text-[#010101] active:opacity-60"
                   >
                     {group.hour}
                   </button>

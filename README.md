@@ -2,6 +2,8 @@
 
 北海道情報大学の学生向け 通学・時刻表サポートアプリ（Next.js 16 App Router / TypeScript / Tailwind CSS v4 / Firestore）。
 
+公開用URL：https://pattomi-tsugaku.vercel.app/
+
 ## セットアップ
 
 前提: Node.js 20.9 以上、npm（`package-lock.json` 管理。pnpm / yarn は不可）
